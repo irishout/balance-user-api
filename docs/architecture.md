@@ -25,7 +25,17 @@ storage       данные: map (ступень 2), PostgreSQL (ступень 3
 
 ## Структура папок
 
-_Решим на ступени 2._
+```.
+├── cmd/
+│   └── app/
+│       └── main.go  
+└── internal/
+    ├── transport/
+    │   ├── router.go
+    │   └── handler.go
+    ├── service
+    └── storage
+```
 
 ## API
 
