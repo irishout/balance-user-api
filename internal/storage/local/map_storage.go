@@ -56,3 +56,29 @@ func (s *MapStorage) Withdraw(userID, amount int64) (int64, error) {
 	s.balances[userID] -= amount
 	return balance - amount, nil
 }
+
+func (s *MapStorage) Transfer(user_from_ID, user_to_ID, amount int64) (int64, int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	balance_from, ok_from := s.balances[user_from_ID]
+	if !ok_from {
+		return 0, 0, domain.ErrSenderNotFound
+	}
+
+	balance_to, ok_to := s.balances[user_to_ID]
+	if !ok_to {
+		return 0, 0, domain.ErrRecipientNotFound
+	}
+
+	if balance_from < amount {
+		return 0, 0, domain.ErrInsufficientFunds
+	}
+
+	if balance_to > math.MaxInt64-amount {
+		return 0, 0, domain.ErrBalanceOverflow
+	}
+
+	s.balances[user_from_ID] -= amount
+	s.balances[user_to_ID] += amount
+	return balance_from - amount, balance_to + amount, nil
+}
