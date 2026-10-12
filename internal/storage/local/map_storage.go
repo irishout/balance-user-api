@@ -28,7 +28,7 @@ func (s *MapStorage) Balance(userID int64) (int64, error) {
 	return balance, nil
 }
 
-func (s *MapStorage) Deposit(userID int64, amount int64) (int64, error) {
+func (s *MapStorage) Deposit(userID, amount int64) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	balance := s.balances[userID]
@@ -39,4 +39,20 @@ func (s *MapStorage) Deposit(userID int64, amount int64) (int64, error) {
 
 	s.balances[userID] += amount
 	return balance + amount, nil
+}
+
+func (s *MapStorage) Withdraw(userID, amount int64) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	balance, ok := s.balances[userID]
+	if !ok {
+		return 0, domain.ErrNotFound
+	}
+
+	if balance < amount {
+		return 0, domain.ErrInsufficientFunds
+	}
+
+	s.balances[userID] -= amount
+	return balance - amount, nil
 }
