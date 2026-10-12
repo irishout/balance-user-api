@@ -171,21 +171,25 @@ storage       данные: map (ступень 2), PostgreSQL (ступень 3
 |---|---|---|---|
 | Deposit (начисление) | user_id, amount | balance | `ErrBalanceOverflow` |
 | Withdraw (списание) | user_id, amount | balance | `ErrNotFound`, `ErrInsufficientFunds` |
-| Transfer (перевод) | user_from_id, user_to_id, amount | balance_user_from, balance_user_to | `ErrNotFound`, `ErrInsufficientFunds`, `ErrBalanceOverflow` |
+| Transfer (перевод) | user_from_id, user_to_id, amount | balance_user_from, balance_user_to | `ErrSenderNotFound`, `ErrRecipientNotFound`, `ErrInsufficientFunds` (у отправителя), `ErrBalanceOverflow` (у получателя) |
 | Balance (баланс) | user_id | balance | `ErrNotFound` |
+
+Storage не проверяет перевод самому себе: при `from = to` баланс не меняется, но в ответе вернутся неверные числа. Эту проверку обязан сделать service.
 
 ## Ошибки между слоями
 
 Ошибки объявлены один раз в `internal/domain`. Все реализации storage (память, позже Postgres) возвращают одни и те же значения. Service пропускает их наверх, handler переводит в HTTP-код через `errors.Is`:
 
-| ошибка `domain` | HTTP-код | готово |
+| ошибка `domain` | HTTP-код | текст ответа |
 |---|---|---|
-| `ErrNotFound` | 404 | да |
-| `ErrInsufficientFunds` | 409 | нет |
-| `ErrBalanceOverflow` | 409 | нет |
-| любая другая | 500 `internal error` | — |
+| `ErrNotFound` | 404 | `user_id not found` |
+| `ErrSenderNotFound` | 404 | `user_from_id not found` |
+| `ErrRecipientNotFound` | 404 | `user_to_id not found` |
+| `ErrInsufficientFunds` | 409 | `insufficient funds` |
+| `ErrBalanceOverflow` | 409 | `balance overflow` |
+| любая другая | 500 | `internal error` |
 
-В переводе `ErrNotFound` один на обоих пользователей. Если клиенту нужно знать, кто именно не найден (`user_from_id not found` / `user_to_id not found`), понадобится либо две ошибки, либо ошибка с полем. _Не решено._
+Тексты ответа с именами полей JSON подставляет handler. Тексты самих ошибок в `domain` не должны знать про JSON.
 
 
 ## Решения и вопросы по ТЗ
@@ -198,4 +202,5 @@ storage       данные: map (ступень 2), PostgreSQL (ступень 3
 | Начисление пользователю, которого ещё нет? | Создаём его (ТЗ, детали, п. 2). |
 | обращение к несуществующему пользователю | перевод несуществующему получателю → 404, начисление → создание нового пользователя |
 | Где объявлять общие ошибки? | В отдельном пакете `internal/domain`. В storage — handler зависел бы от конкретной реализации; в service — storage импортировал бы верхний слой, риск циклического импорта. |
+| Как в переводе сообщить, кто именно не найден? | Две отдельные ошибки: `ErrSenderNotFound` и `ErrRecipientNotFound`. Для «недостаточно средств» и переполнения хватает общих ошибок: первое бывает только у отправителя, второе — только у получателя. Альтернатива — тип ошибки с полем `UserID` и `errors.As`, для четырёх методов избыточно. |
 

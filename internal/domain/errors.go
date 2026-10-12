@@ -5,9 +5,9 @@ import "errors"
 var (
 	ErrNotFound = errors.New("user not found")
 
-	ErrSenderNotFound = errors.New("user_from_id not found")
+	ErrSenderNotFound = errors.New("sender not found")
 
-	ErrRecipientNotFound = errors.New("user_to_id not found")
+	ErrRecipientNotFound = errors.New("recipient not found")
 
 	ErrBalanceOverflow = errors.New("balance overflow")
 
