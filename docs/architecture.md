@@ -178,16 +178,23 @@ Storage не проверяет перевод самому себе: при `fr
 
 ## Ошибки между слоями
 
-Ошибки объявлены один раз в `internal/domain`. Все реализации storage (память, позже Postgres) возвращают одни и те же значения. Service пропускает их наверх, handler переводит в HTTP-код через `errors.Is`:
+Ошибки объявлены один раз в `internal/domain`. Service возвращает свои ошибки проверки запроса, а ошибки storage пропускает наверх без изменений. Все реализации storage (память, позже Postgres) возвращают одни и те же значения. Handler переводит ошибку в HTTP-код через `errors.Is`:
 
-| ошибка `domain` | HTTP-код | текст ответа |
-|---|---|---|
-| `ErrNotFound` | 404 | `user_id not found` |
-| `ErrSenderNotFound` | 404 | `user_from_id not found` |
-| `ErrRecipientNotFound` | 404 | `user_to_id not found` |
-| `ErrInsufficientFunds` | 409 | `insufficient funds` |
-| `ErrBalanceOverflow` | 409 | `balance overflow` |
-| любая другая | 500 | `internal error` |
+| ошибка `domain` | кто возвращает | HTTP-код | текст ответа |
+|---|---|---|---|
+| `ErrInvalidUserID` | service | 400 | `user_id must be greater than 0` |
+| `ErrInvalidSenderID` | service | 400 | `user_from_id must be greater than 0` |
+| `ErrInvalidRecipientID` | service | 400 | `user_to_id must be greater than 0` |
+| `ErrInvalidAmount` | service | 400 | `amount must be greater than 0` |
+| `ErrSelfTransfer` | service | 400 | `user_to_id and user_from_id must be different` |
+| `ErrNotFound` | storage | 404 | `user_id not found` |
+| `ErrSenderNotFound` | storage | 404 | `user_from_id not found` |
+| `ErrRecipientNotFound` | storage | 404 | `user_to_id not found` |
+| `ErrInsufficientFunds` | storage | 409 | `insufficient funds` |
+| `ErrBalanceOverflow` | storage | 409 | `balance overflow` |
+| любая другая | — | 500 | `internal error` |
+
+Ошибки разбора запроса (битый JSON, `user_id` в пути не число) handler находит сам, до вызова service, и отвечает 400.
 
 Тексты ответа с именами полей JSON подставляет handler. Тексты самих ошибок в `domain` не должны знать про JSON.
 
