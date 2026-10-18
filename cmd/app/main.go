@@ -15,13 +15,9 @@ func main() {
 	})
 
 	storage := local.NewMapStorage()
-	srv := service.NewService(storage)
-	//test tmp lines
-	srv.Deposit(1, 3000)
-	srv.Deposit(2, 4000)
-	fmt.Println(storage.Balance(1))
-	fmt.Println(storage.Balance(2))
-	//end of tmp lines
+	svc := service.NewService(storage)
+
+	_ = svc
 
 	log.Println("Starting server on :8080")
 	err := http.ListenAndServe(":8080", nil)

@@ -32,3 +32,43 @@ func (s *Service) Deposit(userID, amount int64) (int64, error) {
 
 	return s.storage.Deposit(userID, amount)
 }
+
+func (s *Service) Withdraw(userID, amount int64) (int64, error) {
+	if userID <= 0 {
+		return 0, domain.ErrInvalidUserID
+	}
+
+	if amount <= 0 {
+		return 0, domain.ErrInvalidAmount
+	}
+
+	return s.storage.Withdraw(userID, amount)
+}
+
+func (s *Service) Transfer(fromID, toID, amount int64) (int64, int64, error) {
+	if fromID <= 0 {
+		return 0, 0, domain.ErrInvalidSenderID
+	}
+
+	if toID <= 0 {
+		return 0, 0, domain.ErrInvalidRecipientID
+	}
+
+	if fromID == toID {
+		return 0, 0, domain.ErrSelfTransfer
+	}
+
+	if amount <= 0 {
+		return 0, 0, domain.ErrInvalidAmount
+	}
+
+	return s.storage.Transfer(fromID, toID, amount)
+}
+
+func (s *Service) Balance(userID int64) (int64, error) {
+	if userID <= 0 {
+		return 0, domain.ErrInvalidUserID
+	}
+
+	return s.storage.Balance(userID)
+}
