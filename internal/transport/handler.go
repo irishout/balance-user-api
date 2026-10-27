@@ -108,3 +108,20 @@ func (h *Handler) Deposit(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, responseWithBalance{Balance: balance})
 }
+func (h *Handler) Withdraw(w http.ResponseWriter, r *http.Request) {
+	var req requestOneID
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	err := decoder.Decode(&req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	balance, err := h.svc.Withdraw(req.UserID, req.Amount)
+	if err != nil {
+		errorHandler(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, responseWithBalance{Balance: balance})
+}
