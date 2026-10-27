@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/irishout/balance-user-api/internal/domain"
 	"github.com/irishout/balance-user-api/internal/service"
@@ -142,4 +143,21 @@ func (h *Handler) Transfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, responseTransfer{BalanceUserFrom: balanceFrom, BalanceUserTo: balanceTo})
+}
+
+func (h *Handler) Balance(w http.ResponseWriter, r *http.Request) {
+
+	userIDStr := r.PathValue("user_id")
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "user_id must be a number")
+		return
+	}
+
+	balance, err := h.svc.Balance(userID)
+	if err != nil {
+		errorHandler(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, responseWithBalance{Balance: balance})
 }

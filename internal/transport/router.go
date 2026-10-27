@@ -14,6 +14,7 @@ func NewRouter(h *Handler) *http.ServeMux {
 	mux.HandleFunc("POST /accrual", h.Deposit)
 	mux.HandleFunc("POST /debiting", h.Withdraw)
 	mux.HandleFunc("POST /transfer", h.Transfer)
+	mux.HandleFunc("GET /balance/{user_id}", h.Balance)
 
 	return mux
 }
