@@ -13,6 +13,7 @@ func NewRouter(h *Handler) *http.ServeMux {
 	})
 	mux.HandleFunc("POST /accrual", h.Deposit)
 	mux.HandleFunc("POST /debiting", h.Withdraw)
+	mux.HandleFunc("POST /transfer", h.Transfer)
 
 	return mux
 }

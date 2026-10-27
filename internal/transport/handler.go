@@ -125,3 +125,21 @@ func (h *Handler) Withdraw(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, responseWithBalance{Balance: balance})
 }
+
+func (h *Handler) Transfer(w http.ResponseWriter, r *http.Request) {
+	var req requestTransfer
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	err := decoder.Decode(&req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	balanceFrom, balanceTo, err := h.svc.Transfer(req.UserFromID, req.UserToID, req.Amount)
+	if err != nil {
+		errorHandler(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, responseTransfer{BalanceUserFrom: balanceFrom, BalanceUserTo: balanceTo})
+}
