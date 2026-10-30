@@ -3,7 +3,7 @@
 Микросервис для работы с балансом пользователей (HTTP JSON API).
 Это тестовое задание Авито, [оригинал условия](https://github.com/avito-tech/job-backend-trainee-assignment).
 
-**Статус:** в разработке. Все четыре метода работают, данные хранятся в PostgreSQL. Для отладки есть режим хранения в памяти. Дальше — Docker Compose и тесты.
+**Статус:** в разработке. Все четыре метода работают, данные хранятся в PostgreSQL, сервис и база поднимаются одной командой через Docker Compose. Дальше — тесты.
 
 Архитектура, полный контракт API и принятые решения: [docs/architecture.md](docs/architecture.md).
 
@@ -11,12 +11,43 @@
 
 - Go 1.26, `net/http` с роутером Go 1.22+, без фреймворков.
 - PostgreSQL 18, драйвер [pgx v5](https://github.com/jackc/pgx) (пул соединений `pgxpool`).
-- Docker для запуска базы.
+- Docker, Docker Compose.
 - Деньги хранятся как `int64` (`BIGINT`) в копейках.
 
 ## Запуск
 
-Нужны Go 1.26 или новее и Docker.
+### Через Docker Compose
+
+Нужен только Docker.
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Compose поднимает два контейнера:
+
+- `db` — PostgreSQL 18. При первом запуске таблица создаётся из [migrations/001_init.sql](migrations/001_init.sql);
+- `app` — сервис. Стартует, только когда база готова принимать подключения.
+
+Сервис доступен на `localhost:8080`, база — на `localhost:5433` (для psql с машины). Оба порта должны быть свободны.
+
+Данные хранятся в томе `pgdata` и переживают перезапуск:
+
+| команда | что происходит |
+|---|---|
+| `docker compose down` | контейнеры удаляются, данные остаются |
+| `docker compose down -v` | удаляются и данные, следующий запуск — с пустой базой |
+
+Посмотреть таблицу:
+
+```bash
+docker compose exec db psql -U balance -d balance -c 'select * from user_balance'
+```
+
+### Для разработки: `go run`
+
+Нужен Go 1.26 или новее.
 
 Хранилище выбирается переменной окружения `STORAGE`:
 
@@ -27,53 +58,35 @@
 
 Если `STORAGE` не задана или в ней опечатка, сервис не стартует. Если база недоступна, тоже не стартует: на хранение в памяти он сам не переключается.
 
-### С PostgreSQL
+С PostgreSQL — база из Compose, сервис на машине:
 
-1. Запустить базу в контейнере:
+```bash
+cp .env.example .env              # если ещё не сделано
+docker compose up -d db           # только база, в фоне
+set -a; source .env; set +a       # загрузить переменные из .env
+go run ./cmd/app
+```
 
-   ```bash
-   docker run --name balance-db \
-     -e POSTGRES_USER=balance -e POSTGRES_PASSWORD=balance -e POSTGRES_DB=balance \
-     -p 5433:5432 -d postgres:18
-   ```
+Go не читает `.env` сам, поэтому переменные нужно загружать в каждом новом окне терминала. Контейнер `app` при этом запускать не нужно: он займёт тот же порт 8080.
 
-   Порт на машине — 5433, чтобы не конфликтовать с локально установленным PostgreSQL, если он занимает 5432.
-
-2. Через несколько секунд, когда база запустится, создать таблицу:
-
-   ```bash
-   docker exec -i balance-db psql -U balance -d balance < migrations/001_init.sql
-   ```
-
-3. Создать в корне проекта файл `.env` (он в `.gitignore`):
-
-   ```
-   STORAGE=postgres
-   DATABASE_URL=postgres://balance:balance@localhost:5433/balance
-   ```
-
-4. Загрузить переменные в окружение и запустить сервис:
-
-   ```bash
-   set -a; source .env; set +a
-   go run ./cmd/app
-   ```
-
-   Go не читает `.env` сам, поэтому переменные нужно загружать в каждом новом окне терминала.
-
-В логе должно появиться `Connected` и `Starting server on :8080`.
-
-После перезапуска контейнера (`docker stop` / `docker start balance-db`) данные сохраняются. После `docker rm` таблицу нужно создать заново (шаг 2).
-
-### В памяти
+В памяти:
 
 ```bash
 STORAGE=memory go run ./cmd/app
 ```
 
-### Проверка
+### Переменные окружения
 
-Сервер слушает порт 8080:
+| переменная | кто использует | пример |
+|---|---|---|
+| `STORAGE` | сервис | `postgres` или `memory` |
+| `DATABASE_URL` | сервис при `STORAGE=postgres` | `postgres://balance:balance@localhost:5433/balance` |
+| `PORT` | сервис | `8080` (по умолчанию) |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Compose: база и строка подключения для `app` | `balance` |
+
+`.env.example` — шаблон, `.env` — локальная копия, в git не попадает. В Compose контейнер `app` получает `DATABASE_URL` с хостом `db`, а не `localhost`: внутри контейнера `localhost` — это он сам.
+
+### Проверка
 
 ```bash
 curl localhost:8080/ping
@@ -180,7 +193,8 @@ curl -X POST localhost:8080/debiting -d '{"user_id": 1, "amount": 1000000}'
    - перевод — транзакция: обе строки блокируются через `SELECT ... FOR UPDATE` в порядке возрастания `user_id`, чтобы встречные переводы не попали в дедлок.
 
    Проверено: 200 одновременных списаний по 1000 с баланса 100000 дают 100 ответов 200, 100 ответов 409 и баланс 0. В режиме `memory` ту же роль выполняет мьютекс.
-9. **Механизм миграций?** По ТЗ не нужен. Итоговая схема — в [migrations/001_init.sql](migrations/001_init.sql).
+9. **Механизм миграций?** По ТЗ не нужен. Итоговая схема — в [migrations/001_init.sql](migrations/001_init.sql), Compose применяет её при первом запуске базы.
+10. **Что, если сервис стартует раньше базы?** В Compose у базы есть `healthcheck` (`pg_isready`), и `app` запускается только после того, как база стала `healthy`. Если база всё же недоступна, сервис падает с понятной ошибкой, а не работает без неё.
 
 ## Структура
 
@@ -194,11 +208,12 @@ internal/storage/
 internal/domain/        ошибки, общие для всех слоёв
 migrations/             SQL-схема
 docs/                   условие задания и архитектура
+Dockerfile              сборка образа сервиса в два этапа
+docker-compose.yml      сервис + PostgreSQL
+.env.example            шаблон переменных окружения
 ```
 
 ## Что дальше
 
-- Порт сервера из переменной окружения
-- Docker Compose: сервис и база одной командой
 - Тесты
 - Дополнительные задания: история операций, конвертация валют
