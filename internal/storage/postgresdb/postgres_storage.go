@@ -10,7 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var codeNumericOutOfRange = "22003"
+const codeNumericOutOfRange = "22003"
+const balanceNonNegative = "balance_non_negative"
 
 type PostgresStorage struct {
 	pool *pgxpool.Pool
@@ -54,12 +55,32 @@ func (s *PostgresStorage) Deposit(userID, amount int64) (int64, error) {
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == codeNumericOutOfRange {
 				return 0, domain.ErrBalanceOverflow
-			} else {
-				return 0, err
 			}
-		} else {
-			return 0, err
 		}
+		return 0, err
+	}
+	return balance, nil
+}
+
+func (s *PostgresStorage) Withdraw(userID, amount int64) (int64, error) {
+	var balance int64
+	ctx := context.Background()
+	err := s.pool.QueryRow(ctx, `
+								update user_balance set 
+									balance = user_balance.balance - $2
+								where user_id = $1
+								RETURNING balance;`,
+		userID, amount).Scan(&balance)
+	var pgErr *pgconn.PgError
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, domain.ErrNotFound
+		} else if errors.As(err, &pgErr) {
+			if pgErr.ConstraintName == balanceNonNegative {
+				return 0, domain.ErrInsufficientFunds
+			}
+		}
+		return 0, err
 	}
 	return balance, nil
 }
