@@ -1,0 +1,7 @@
+.env
+.git
+app
+.DS_Store
+claude.md
+/docs
+/migrations
