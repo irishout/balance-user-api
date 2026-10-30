@@ -84,3 +84,56 @@ func (s *PostgresStorage) Withdraw(userID, amount int64) (int64, error) {
 	}
 	return balance, nil
 }
+
+func (s *PostgresStorage) Transfer(fromID, toID, amount int64) (int64, int64, error) {
+	var balanceFrom, balanceTo int64
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback(ctx)
+	_, err = tx.Exec(ctx, "select user_id from user_balance where user_id in ($1, $2) order by user_id for update;", fromID, toID)
+	if err != nil {
+		return 0, 0, err
+	}
+	err = tx.QueryRow(ctx, `
+								update user_balance set 
+									balance = user_balance.balance - $2
+								where user_id = $1
+								RETURNING balance;`,
+		fromID, amount).Scan(&balanceFrom)
+
+	var pgErr *pgconn.PgError
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, 0, domain.ErrSenderNotFound
+		} else if errors.As(err, &pgErr) {
+			if pgErr.ConstraintName == balanceNonNegative {
+				return 0, 0, domain.ErrInsufficientFunds
+			}
+		}
+		return 0, 0, err
+	}
+	err = tx.QueryRow(ctx, `
+								update user_balance set 
+									balance = user_balance.balance + $2
+								where user_id = $1
+								RETURNING balance;`,
+		toID, amount).Scan(&balanceTo)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, 0, domain.ErrRecipientNotFound
+		} else if errors.As(err, &pgErr) {
+			if pgErr.Code == codeNumericOutOfRange {
+				return 0, 0, domain.ErrBalanceOverflow
+			}
+		}
+		return 0, 0, err
+	}
+	err = tx.Commit(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	return balanceFrom, balanceTo, nil
+}
