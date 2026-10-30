@@ -1,14 +1,16 @@
 package service
 
 import (
+	"context"
+
 	"github.com/irishout/balance-user-api/internal/domain"
 )
 
 type Storage interface {
-	Balance(userID int64) (int64, error)
-	Deposit(userID, amount int64) (int64, error)
-	Withdraw(userID, amount int64) (int64, error)
-	Transfer(fromID, toID, amount int64) (int64, int64, error)
+	Balance(ctx context.Context, userID int64) (int64, error)
+	Deposit(ctx context.Context, userID, amount int64) (int64, error)
+	Withdraw(ctx context.Context, userID, amount int64) (int64, error)
+	Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error)
 }
 
 type Service struct {
@@ -21,7 +23,7 @@ func NewService(s Storage) *Service {
 	}
 }
 
-func (s *Service) Deposit(userID, amount int64) (int64, error) {
+func (s *Service) Deposit(ctx context.Context, userID, amount int64) (int64, error) {
 	if userID <= 0 {
 		return 0, domain.ErrInvalidUserID
 	}
@@ -30,10 +32,10 @@ func (s *Service) Deposit(userID, amount int64) (int64, error) {
 		return 0, domain.ErrInvalidAmount
 	}
 
-	return s.storage.Deposit(userID, amount)
+	return s.storage.Deposit(ctx, userID, amount)
 }
 
-func (s *Service) Withdraw(userID, amount int64) (int64, error) {
+func (s *Service) Withdraw(ctx context.Context, userID, amount int64) (int64, error) {
 	if userID <= 0 {
 		return 0, domain.ErrInvalidUserID
 	}
@@ -42,10 +44,10 @@ func (s *Service) Withdraw(userID, amount int64) (int64, error) {
 		return 0, domain.ErrInvalidAmount
 	}
 
-	return s.storage.Withdraw(userID, amount)
+	return s.storage.Withdraw(ctx, userID, amount)
 }
 
-func (s *Service) Transfer(fromID, toID, amount int64) (int64, int64, error) {
+func (s *Service) Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error) {
 	if fromID <= 0 {
 		return 0, 0, domain.ErrInvalidSenderID
 	}
@@ -62,13 +64,13 @@ func (s *Service) Transfer(fromID, toID, amount int64) (int64, int64, error) {
 		return 0, 0, domain.ErrInvalidAmount
 	}
 
-	return s.storage.Transfer(fromID, toID, amount)
+	return s.storage.Transfer(ctx, fromID, toID, amount)
 }
 
-func (s *Service) Balance(userID int64) (int64, error) {
+func (s *Service) Balance(ctx context.Context, userID int64) (int64, error) {
 	if userID <= 0 {
 		return 0, domain.ErrInvalidUserID
 	}
 
-	return s.storage.Balance(userID)
+	return s.storage.Balance(ctx, userID)
 }

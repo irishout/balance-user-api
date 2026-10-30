@@ -93,6 +93,7 @@ func errorHandler(w http.ResponseWriter, err error) {
 }
 
 func (h *Handler) Deposit(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req requestOneID
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -102,7 +103,7 @@ func (h *Handler) Deposit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balance, err := h.svc.Deposit(req.UserID, req.Amount)
+	balance, err := h.svc.Deposit(ctx, req.UserID, req.Amount)
 	if err != nil {
 		errorHandler(w, err)
 		return
@@ -110,6 +111,7 @@ func (h *Handler) Deposit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, responseWithBalance{Balance: balance})
 }
 func (h *Handler) Withdraw(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req requestOneID
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -119,7 +121,7 @@ func (h *Handler) Withdraw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balance, err := h.svc.Withdraw(req.UserID, req.Amount)
+	balance, err := h.svc.Withdraw(ctx, req.UserID, req.Amount)
 	if err != nil {
 		errorHandler(w, err)
 		return
@@ -128,6 +130,7 @@ func (h *Handler) Withdraw(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Transfer(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req requestTransfer
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -137,7 +140,7 @@ func (h *Handler) Transfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balanceFrom, balanceTo, err := h.svc.Transfer(req.UserFromID, req.UserToID, req.Amount)
+	balanceFrom, balanceTo, err := h.svc.Transfer(ctx, req.UserFromID, req.UserToID, req.Amount)
 	if err != nil {
 		errorHandler(w, err)
 		return
@@ -146,7 +149,7 @@ func (h *Handler) Transfer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Balance(w http.ResponseWriter, r *http.Request) {
-
+	ctx := r.Context()
 	userIDStr := r.PathValue("user_id")
 	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
@@ -154,7 +157,7 @@ func (h *Handler) Balance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balance, err := h.svc.Balance(userID)
+	balance, err := h.svc.Balance(ctx, userID)
 	if err != nil {
 		errorHandler(w, err)
 		return

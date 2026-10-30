@@ -23,9 +23,8 @@ func NewPostgresStorage(pool *pgxpool.Pool) *PostgresStorage {
 	}
 }
 
-func (s *PostgresStorage) Balance(userID int64) (int64, error) {
+func (s *PostgresStorage) Balance(ctx context.Context, userID int64) (int64, error) {
 	var balance int64
-	ctx := context.Background()
 	err := s.pool.QueryRow(ctx, "SELECT balance FROM user_balance WHERE user_id = $1", userID).Scan(&balance)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -37,9 +36,8 @@ func (s *PostgresStorage) Balance(userID int64) (int64, error) {
 	return balance, nil
 }
 
-func (s *PostgresStorage) Deposit(userID, amount int64) (int64, error) {
+func (s *PostgresStorage) Deposit(ctx context.Context, userID, amount int64) (int64, error) {
 	var balance int64
-	ctx := context.Background()
 	err := s.pool.QueryRow(ctx, `
 								insert into user_balance (user_id, balance) values (
 									$1,
@@ -62,9 +60,8 @@ func (s *PostgresStorage) Deposit(userID, amount int64) (int64, error) {
 	return balance, nil
 }
 
-func (s *PostgresStorage) Withdraw(userID, amount int64) (int64, error) {
+func (s *PostgresStorage) Withdraw(ctx context.Context, userID, amount int64) (int64, error) {
 	var balance int64
-	ctx := context.Background()
 	err := s.pool.QueryRow(ctx, `
 								update user_balance set 
 									balance = user_balance.balance - $2
@@ -85,9 +82,8 @@ func (s *PostgresStorage) Withdraw(userID, amount int64) (int64, error) {
 	return balance, nil
 }
 
-func (s *PostgresStorage) Transfer(fromID, toID, amount int64) (int64, int64, error) {
+func (s *PostgresStorage) Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error) {
 	var balanceFrom, balanceTo int64
-	ctx := context.Background()
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return 0, 0, err

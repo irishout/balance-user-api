@@ -15,7 +15,11 @@ import (
 
 func main() {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		log.Fatal("DATABASE is not available", err)
 	}
