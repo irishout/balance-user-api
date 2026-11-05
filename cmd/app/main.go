@@ -54,7 +54,7 @@ func main() {
 		port = "8080"
 	}
 	log.Printf("Starting server on :%s", port)
-	err := http.ListenAndServe(":"+port, router)
+	err := http.ListenAndServe(":"+port, transport.LoggingMiddleware(router))
 	if err != nil {
 		log.Fatal(err)
 	}
