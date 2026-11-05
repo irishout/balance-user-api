@@ -1,6 +1,6 @@
 # Архитектура balance-user-api
 
-Черновик, дополняется по ходу работы.
+Все четыре операции реализованы для PostgreSQL и памяти. Запуск — через Docker Compose или локально. Тесты service и основные HTTP-сценарии готовы; middleware логирования запросов ещё не добавлен.
 
 ## Путь запроса
 
@@ -37,19 +37,25 @@ storage       данные: PostgreSQL или map в памяти (выбира�
 │   │   └── errors.go               ошибки, общие для всех слоёв
 │   ├── transport/
 │   │   ├── router.go
-│   │   └── handler.go
+│   │   ├── handler.go
+│   │   └── handler_test.go         HTTP-коды и JSON через httptest
 │   ├── service/
-│   │   └── balance.go              Service + интерфейс Storage
+│   │   ├── balance.go              Service + интерфейс Storage
+│   │   └── balance_test.go         табличные тесты, мок Storage
 │   └── storage/
 │       ├── local/
 │       │   └── map_storage.go      хранилище в памяти: map + sync.Mutex
 │       └── postgresdb/
 │           └── postgres_storage.go хранилище в PostgreSQL через pgxpool
-└── migrations/
-    └── 001_init.sql                схема таблицы
+├── migrations/
+│   └── 001_init.sql                схема таблицы
+├── Dockerfile                      сборка бинарника и образа сервиса
+├── .dockerignore                   исключения из контекста сборки
+├── docker-compose.yml              app + db, сеть, том, healthcheck
+└── .env.example                    шаблон переменных окружения
 ```
 
-Кто кого импортирует (циклы в Go запрещены):
+Кто кого импортирует в рабочем коде (циклы в Go запрещены):
 
 | пакет | импортирует |
 |---|---|
@@ -70,16 +76,36 @@ storage       данные: PostgreSQL или map в памяти (выбира�
 |---|---|---|
 | `STORAGE` | `postgres` или `memory` | `log.Fatal` |
 | `DATABASE_URL` | `postgres://user:pass@host:port/db` | при `STORAGE=postgres` — `log.Fatal` |
+| `PORT` | номер порта HTTP-сервера | если не задана — `8080`; ошибка прослушивания порта завершает сервис |
 
 При `STORAGE=postgres` main создаёт пул и проверяет связь через `Ping`: `pgxpool.New` к базе не ходит. Если `Ping` не прошёл — `log.Fatal`.
 
-Порт пока задан в коде: `:8080`.
+В Compose `app` получает `STORAGE=postgres`, `PORT=8080` и строку подключения с хостом `db:5432`. Значения `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` подставляются из `.env` и используются для настройки базы и строки подключения сервиса.
+
+## Docker и Compose
+
+Dockerfile собирает Go-бинарник на этапе `build`, затем копирует его в образ на базе Alpine. База данных запускается отдельным контейнером из образа `postgres:18`.
+
+```text
+клиент на Mac → localhost:8080 → app:8080
+                                  │
+                                  └→ db:5432 → том pgdata
+
+psql на Mac  → localhost:5433 ──────→ db:5432
+```
+
+`app` обращается к базе по имени сервиса `db` во внутренней сети Compose. Проброс `5433:5432` нужен для подключения с машины.
+
+- `db` проверяется через `pg_isready`; `depends_on: condition: service_healthy` задерживает запуск `app` до готовности базы. При запуске сервис также вызывает `Ping`.
+- `migrations/001_init.sql` подключён в `/docker-entrypoint-initdb.d/001_init.sql` и выполняется при инициализации пустого каталога данных.
+- Именованный том `pgdata` подключён к `/var/lib/postgresql`. `docker compose down` сохраняет данные, `docker compose down -v` удаляет том.
+- После изменения Go-кода нужен `docker compose up --build`, чтобы собрать образ с новым бинарником. `restart` перезапускает существующий контейнер.
 
 ## API
 
 Суммы — целые числа в копейках.
 
-Ошибки возвращаются как `{"error": "текст"}`. Неизвестные ошибки → 500 `{"error": "internal error"}`, подробности только в лог.
+Ошибки возвращаются как `{"error": "текст"}`. Неизвестные ошибки → 500 `{"error": "internal error"}`. Сейчас `errorHandler` не логирует исходную ошибку.
 
 ### Начисление
 
@@ -101,7 +127,7 @@ storage       данные: PostgreSQL или map в памяти (выбира�
 
 | ситуация | код | текст |
 |---|---|---|
-| битый JSON, нет полей | 400 | invalid JSON body |
+| битый JSON или неизвестное поле | 400 | invalid JSON body |
 | `user_id` ≤ 0 | 400 | user_id must be greater than 0 |
 | `amount` ≤ 0 | 400 | amount must be greater than 0 |
 | баланс переполнит `int64` | 409 | balance overflow |
@@ -128,7 +154,7 @@ storage       данные: PostgreSQL или map в памяти (выбира�
 
 | ситуация | код | текст |
 |---|---|---|
-| битый JSON, нет полей | 400 | invalid JSON body |
+| битый JSON или неизвестное поле | 400 | invalid JSON body |
 | `user_id` не найден |404| user_id not found |
 | `user_id` ≤ 0 | 400 | user_id must be greater than 0 |
 | `amount` ≤ 0 | 400 | amount must be greater than 0 |
@@ -154,7 +180,7 @@ storage       данные: PostgreSQL или map в памяти (выбира�
 
 | ситуация | код | текст |
 |---|---|---|
-| битый JSON, нет полей | 400 | invalid JSON body |
+| битый JSON или неизвестное поле | 400 | invalid JSON body |
 | `user_from_id` не найден |404| user_from_id not found |
 | `user_to_id` не найден |404| user_to_id not found |
 | `user_from_id` ≤ 0 | 400 | user_from_id must be greater than 0 |
@@ -183,6 +209,46 @@ storage       данные: PostgreSQL или map в памяти (выбира�
 | `user_id` не найден |404| user_id not found |
 | `user_id` ≤ 0 | 400 | user_id must be greater than 0 |
 
+
+Пропущенные поля получают нулевые значения в Go-структуре. Их отклоняет service как невалидный id или сумму.
+
+## Тестирование
+
+Тесты находятся рядом с исходным кодом и используют стандартный пакет `testing`.
+
+### Service
+
+`internal/service/balance_test.go` проверяет все четыре метода. Мок `storageMock` реализует интерфейс `Storage`, записывает переданные аргументы и возвращает заранее заданные результаты и ошибки.
+
+Проверяются успешные вызовы, валидация id и суммы, запрет перевода самому себе, передача аргументов в storage и возврат его ошибок. Повторяющиеся сценарии оформлены как таблицы с `t.Run`. В тестах ранней валидации используется `NewService(nil)`: обращение к storage при ошибочных данных привело бы к падению теста.
+
+### HTTP-обработчики
+
+`internal/transport/handler_test.go` создаёт запрос через `httptest.NewRequest`, а ответ записывает в `httptest.NewRecorder`. Настоящий сетевой сервер не запускается.
+
+| операция | успешный сценарий | ошибочный сценарий |
+|---|---|---|
+| Deposit | 200 и новый баланс | 400 и `invalid JSON body` |
+| Withdraw | 200 и остаток | 409 и `insufficient funds` |
+| Transfer | 200 и оба баланса | 400 и запрет перевода самому себе |
+| Balance | 200 и баланс | 404 и `user_id not found` |
+
+Для операций используются настоящий service и `local.MapStorage`; тест невалидного JSON создаёт handler без service, поскольку запрос отклоняется до его вызова. Balance вызывается через `NewRouter(h).ServeHTTP`, чтобы роутер заполнил `r.PathValue("user_id")`. Остальные тесты вызывают метод handler напрямую.
+
+Всего восемь HTTP-тестов, каждый проверяет код и JSON-тело ответа. Отдельных тестов всех веток `errorHandler` и автоматических тестов storage пока нет. Описанные ниже эксперименты с параллельными запросами выполнялись отдельно.
+
+### Запуск
+
+Из корня проекта, без PostgreSQL, Docker и переменных окружения:
+
+```bash
+go test ./...
+go test -race ./...
+go test -v ./internal/service
+go test -run '^TestBalance' -v ./internal/transport
+```
+
+Следующий шаг ступени 4 — middleware логирования HTTP-запросов. Интеграционные тесты PostgreSQL и graceful shutdown остаются дополнительными задачами.
 
 ## Storage
 
