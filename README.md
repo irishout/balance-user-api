@@ -3,7 +3,7 @@
 Микросервис для работы с балансом пользователей (HTTP JSON API).
 Это тестовое задание Авито, [оригинал условия](https://github.com/avito-tech/job-backend-trainee-assignment).
 
-**Статус:** в разработке. Все четыре метода работают, доступны PostgreSQL и хранилище в памяти. Сервис и база поднимаются через Docker Compose. Написаны unit-тесты service и HTTP-тесты обработчиков. Следующий шаг — middleware логирования запросов.
+**Статус:** в разработке. Все четыре метода работают, доступны PostgreSQL и хранилище в памяти. Сервис и база поднимаются через Docker Compose. Есть тесты service, HTTP-обработчиков и PostgreSQL, логирование запросов и graceful shutdown. Следующее расширение — gRPC.
 
 Архитектура, полный контракт API и принятые решения: [docs/architecture.md](docs/architecture.md).
 
@@ -82,6 +82,7 @@ STORAGE=memory go run ./cmd/app
 | `STORAGE` | сервис | `postgres` или `memory` |
 | `DATABASE_URL` | сервис при `STORAGE=postgres` | `postgres://balance:balance@localhost:5433/balance` |
 | `PORT` | сервис | `8080` (по умолчанию) |
+| `TEST_DATABASE_URL` | интеграционные тесты | `postgres://balance:balance@localhost:5433/balance_test` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Compose: база и строка подключения для `app` | `balance` |
 
 `.env.example` — шаблон, `.env` — локальная копия, в git не попадает. В Compose контейнер `app` получает `DATABASE_URL` с хостом `db`, а не `localhost`: внутри контейнера `localhost` — это он сам.
@@ -91,6 +92,24 @@ STORAGE=memory go run ./cmd/app
 ```bash
 curl localhost:8080/ping
 ```
+
+### Логи и остановка
+
+Для каждого обработанного запроса middleware пишет в лог HTTP-метод, путь и длительность. Посмотреть логи контейнера:
+
+```bash
+docker compose logs -f app
+```
+
+При `SIGINT` (Ctrl+C) или `SIGTERM` сервис перестаёт принимать новые соединения и ждёт завершения текущих HTTP-запросов до 10 секунд. При ошибке `Shutdown`, в том числе по таймауту, вызывается `server.Close()` для принудительного закрытия соединений. Затем при выходе из `main` закрывается пул PostgreSQL.
+
+Для остановки только приложения с запасом времени на завершение:
+
+```bash
+docker compose stop -t 15 app
+```
+
+База при этом продолжает работать. `http.ErrServerClosed` при штатной остановке не считается аварией.
 
 ## API
 
@@ -180,11 +199,15 @@ curl -X POST localhost:8080/debiting -d '{"user_id": 1, "amount": 1000000}'
 
 ## Тесты
 
-Запуск из корня проекта, нужен Go 1.26 или новее. Сервер, PostgreSQL, Docker и загрузка `.env` для текущих тестов не нужны.
+Запуск из корня проекта, нужен Go 1.26 или новее.
+
+### Service и HTTP-обработчики
+
+Этим тестам не нужны сервер, PostgreSQL, Docker или переменные окружения:
 
 ```bash
-go test ./...                 # все тесты
-go test -race ./...           # с проверкой гонок данных
+go test ./internal/service ./internal/transport
+go test -race ./internal/service ./internal/transport
 go test -v ./internal/service # подробно, включая табличные подтесты
 go test -run '^TestBalance' -v ./internal/transport # только HTTP-тесты баланса
 ```
@@ -196,14 +219,60 @@ go test -run '^TestBalance' -v ./internal/transport # только HTTP-тест
 
 HTTP-тесты используют настоящий service и `MapStorage`; для невалидного JSON service не нужен. Тесты баланса проходят через роутер, который заполняет `user_id` из пути. Проверяются HTTP-коды и JSON-тела ответов.
 
-Автоматических тестов PostgreSQL пока нет. HTTP-тесты проверяют выбранные ошибки; отдельного теста на каждую ветку `errorHandler` пока нет.
+HTTP-тесты проверяют выбранные ошибки; отдельного теста на каждую ветку `errorHandler` пока нет.
 
-Перед коммитом:
+### Интеграционные тесты PostgreSQL
+
+[internal/storage/postgresdb/postgres_storage_test.go](internal/storage/postgresdb/postgres_storage_test.go) работает с настоящим PostgreSQL через `pgxpool`. Контейнер приложения `app` и HTTP-сервер для этих тестов не нужны.
+
+Один раз подготовь отдельную базу `balance_test`:
+
+```bash
+cp .env.example .env # если локального .env ещё нет
+docker compose up -d --wait db
+docker compose exec -T db psql -U balance -d balance -c 'CREATE DATABASE balance_test;'
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U balance -d balance_test < migrations/001_init.sql
+```
+
+Команда `CREATE DATABASE` нужна только при первом создании базы. Если база уже существует, повторять её не нужно. Команды используют пользователя `balance` из `.env.example`; при своей конфигурации подставь своё имя пользователя и основной базы.
+
+В локальном `.env` должна быть переменная:
+
+```dotenv
+TEST_DATABASE_URL=postgres://balance:balance@localhost:5433/balance_test
+```
+
+В каждом новом терминале загрузи переменные и запусти тесты:
+
+```bash
+set -a; source .env; set +a
+go test -race -count=1 -timeout=30s -v ./internal/storage/postgresdb
+```
+
+`-race` проверяет гонки данных в Go, `-count=1` отключает кеш результатов, `-timeout=30s` ограничивает время работы тестового процесса. Для одного сценария после `-run` укажи имя теста, а затем путь пакета:
+
+```bash
+go test -race -count=1 -timeout=30s -v -run '^TestWithdrawConcurrent$' ./internal/storage/postgresdb
+```
+
+| тест | что проверяет |
+|---|---|
+| `TestTransferRollbackRecipientNotFound` | перевод 300 отсутствующему получателю возвращает `ErrRecipientNotFound`, баланс отправителя остаётся 1000 |
+| `TestWithdrawConcurrent` | 200 параллельных списаний по 1000 с баланса 100000: 100 успешных, 100 с `ErrInsufficientFunds`, итоговый баланс 0 |
+| `TestTransferConcurrentOppositeDirections` | по 100 переводов в каждую сторону по 1 копейке: все 200 успешны, у каждого пользователя остаётся по 1000 |
+
+Перед каждым тестом проверяется имя базы `balance_test` и очищается таблица `user_balance` через `TRUNCATE`. Данные тестовой таблицы удаляются. Тесты запускаются последовательно; не запускай несколько их копий одновременно на одной базе. У теста встречных переводов есть общий контекст с таймаутом 10 секунд.
+
+Без `TEST_DATABASE_URL` интеграционные тесты получают `SKIP`. Если переменная задана, но база недоступна или имеет другое имя, тест завершится с ошибкой. Go и кнопка запуска тестов в редакторе сами `.env` не загружают.
+
+### Все тесты и проверки
+
+При загруженном `TEST_DATABASE_URL` и подготовленной тестовой базе команды ниже проверяют также PostgreSQL. Без этой переменной интеграционные тесты будут пропущены.
 
 ```bash
 go build ./...
 go vet ./...
-go test -race ./...
+go test -race -count=1 -timeout=30s ./...
 ```
 
 ## Вопросы по ТЗ и решения
@@ -227,8 +296,8 @@ go test -race ./...
 ## Структура
 
 ```
-cmd/app/                точка входа: конфиг из env, сборка слоёв, запуск сервера
-internal/transport/     HTTP: роутер, обработчики, JSON, коды ответов
+cmd/app/                конфиг из env, сборка слоёв, запуск и остановка сервера
+internal/transport/     HTTP: роутер, обработчики, JSON, коды ответов, логирование
 internal/service/       проверка данных запроса, интерфейс Storage
 internal/storage/
   postgresdb/           хранилище в PostgreSQL
@@ -245,6 +314,8 @@ docker-compose.yml      сервис + PostgreSQL
 
 ## Что дальше
 
-- Middleware логирования HTTP-запросов
-- По желанию: интеграционные тесты PostgreSQL и graceful shutdown
-- Дополнительные задания: история операций, конвертация валют
+- Проверка graceful shutdown с активным запросом и при истечении времени ожидания
+- gRPC как второй транспорт поверх существующего service
+- История операций с пагинацией и сортировкой
+- Конвертация валют через внешний API и Redis для кеширования курсов
+- Kafka: события операций, transactional outbox и отдельный consumer
