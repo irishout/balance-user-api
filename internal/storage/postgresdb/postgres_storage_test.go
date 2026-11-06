@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/irishout/balance-user-api/internal/domain"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -123,5 +124,92 @@ func TestWithdrawConcurrent(t *testing.T) {
 	}
 	if balance != 0 {
 		t.Fatalf("Sender balance must be 0, got: %v", balance)
+	}
+}
+
+func TestTransferConcurrentOppositeDirections(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("TEST_DATABASE is not available. %v", err)
+	}
+	defer pool.Close()
+
+	err = pool.Ping(ctx)
+	if err != nil {
+		t.Fatalf("TEST_DATABASE is not available. %v", err)
+	}
+	storage := NewPostgresStorage(pool)
+
+	if db := pool.Config().ConnConfig.Database; db != "balance_test" {
+		t.Fatalf("Need balance_test database, got %v database", db)
+	}
+	_, err = pool.Exec(ctx, "TRUNCATE TABLE user_balance")
+	if err != nil {
+		t.Fatalf("Couldn`t delete old data from test DB. %v", err)
+	}
+
+	_, err = storage.Deposit(ctx, 1, 1000)
+	if err != nil {
+		t.Fatalf("storage Deposit error %v", err)
+	}
+
+	_, err = storage.Deposit(ctx, 2, 1000)
+	if err != nil {
+		t.Fatalf("storage Deposit error %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errorsSlice := make([]error, 200)
+
+	for i := 0; i < len(errorsSlice)/2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, err1 := storage.Transfer(ctx, 1, 2, 1)
+			errorsSlice[i] = err1
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, err2 := storage.Transfer(ctx, 2, 1, 1)
+			errorsSlice[100+i] = err2
+		}()
+	}
+	wg.Wait()
+
+	sucsessCount := 0
+	for _, v := range errorsSlice {
+		if v == nil {
+			sucsessCount++
+		} else {
+			t.Errorf("Unexpected result. Expected nil. Got: %v", v)
+		}
+	}
+
+	if !(sucsessCount == 200) {
+		t.Fatalf("Expexted 200 sucsesses. Got: %v sucsessCount ",
+			sucsessCount)
+	}
+
+	balance1ID, err := storage.Balance(ctx, 1)
+	if err != nil {
+		t.Fatalf("storage Balance error %v", err)
+	}
+	if balance1ID != 1000 {
+		t.Fatalf("1 ID balance must be 1000, got: %v", balance1ID)
+	}
+
+	balance2ID, err := storage.Balance(ctx, 2)
+	if err != nil {
+		t.Fatalf("storage Balance error %v", err)
+	}
+	if balance2ID != 1000 {
+		t.Fatalf("2 ID balance must be 1000, got: %v", balance2ID)
 	}
 }
