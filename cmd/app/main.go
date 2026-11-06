@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -54,8 +58,30 @@ func main() {
 		port = "8080"
 	}
 	log.Printf("Starting server on :%s", port)
-	err := http.ListenAndServe(":"+port, transport.LoggingMiddleware(router))
-	if err != nil {
-		log.Fatal(err)
+
+	server := http.Server{
+		Addr:    ":" + port,
+		Handler: transport.LoggingMiddleware(router),
 	}
+
+	stopCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM) //graceful shutdown на остановку Ctrl+C или docker compose stop
+	defer stop()
+
+	go func() {
+		err := server.ListenAndServe()
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	}()
+	<-stopCtx.Done() //чтение из канала, ждем сигнал после которого канал закроется
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := server.Shutdown(shutdownCtx)
+	if err != nil {
+		log.Println("Cannot shutdown server", err)
+		server.Close()
+	}
+
 }
