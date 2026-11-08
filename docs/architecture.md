@@ -1,440 +1,302 @@
 # Архитектура balance-user-api
 
-Все четыре операции реализованы для PostgreSQL и памяти. Запуск — через Docker Compose или локально. Есть тесты service, HTTP-обработчиков и PostgreSQL, middleware логирования и graceful shutdown. Следующий этап расширения — gRPC.
+Сервис разделён на транспортный, сервисный и слой хранения данных. Рабочий транспорт — HTTP JSON. gRPC представлен контрактом первого метода и сгенерированным Go-кодом; обработчики и сетевой сервер находятся в разработке.
 
-## Путь запроса
+Инструкции по запуску, примеры запросов и команды проверки приведены в [README](../README.md).
 
-```
-клиент (curl, другой сервис)
-  │
-  ▼
-http.Server   слушает порт, на каждое соединение запускает горутину
-  │
-  ▼
-middleware    запоминает время → вызывает роутер → пишет метод, путь и длительность
-  │
-  ▼
-роутер        метод + путь → handler; 404 и 405 отвечает сам
-  │
-  ▼
-handler       JSON ↔ структуры Go, ошибки → коды ответа; берёт ctx = r.Context()
-  │
-  ▼
-service       бизнес-правила (проверка данных запроса)
-  │
-  ▼
-storage       данные: PostgreSQL или map в памяти (выбирается в main)
-```
+## Оглавление
 
-`ctx` идёт первым параметром через все слои: handler → service → storage → pgx.
+- [Слои и зависимости](#слои-и-зависимости)
+  - [Структура пакетов](#структура-пакетов)
+- [Модель данных и правила операций](#модель-данных-и-правила-операций)
+  - [Схема PostgreSQL](#схема-postgresql)
+- [Контракт Storage](#контракт-storage)
+  - [Хранилище в памяти](#хранилище-в-памяти)
+  - [PostgreSQL](#postgresql)
+  - [Преобразование ошибок базы](#преобразование-ошибок-базы)
+- [HTTP API](#http-api)
+  - [Ошибки операций](#ошибки-операций)
+- [gRPC](#grpc)
+  - [Текущая реализация](#текущая-реализация)
+  - [Целевая организация транспорта](#целевая-организация-транспорта)
+- [Конфигурация](#конфигурация)
+- [Жизненный цикл сервера](#жизненный-цикл-сервера)
+  - [Запуск и обработка запросов](#запуск-и-обработка-запросов)
+  - [Graceful shutdown](#graceful-shutdown)
+  - [Контексты](#контексты)
+- [Развёртывание](#развёртывание)
+- [Тестирование](#тестирование)
 
-## Структура папок
-
-```
-.
-├── cmd/
-│   └── app/
-│       └── main.go                 конфиг из env, сборка слоёв, запуск и остановка
-├── internal/
-│   ├── domain/
-│   │   └── errors.go               ошибки, общие для всех слоёв
-│   ├── transport/
-│   │   ├── router.go
-│   │   ├── handler.go
-│   │   ├── middleware.go           логирование запросов
-│   │   └── handler_test.go         HTTP-коды и JSON через httptest
-│   ├── service/
-│   │   ├── balance.go              Service + интерфейс Storage
-│   │   └── balance_test.go         табличные тесты, мок Storage
-│   └── storage/
-│       ├── local/
-│       │   └── map_storage.go      хранилище в памяти: map + sync.Mutex
-│       └── postgresdb/
-│           ├── postgres_storage.go хранилище в PostgreSQL через pgxpool
-│           └── postgres_storage_test.go  интеграционные тесты с отдельной базой
-├── migrations/
-│   └── 001_init.sql                схема таблицы
-├── Dockerfile                      сборка бинарника и образа сервиса
-├── .dockerignore                   исключения из контекста сборки
-├── docker-compose.yml              app + db, сеть, том, healthcheck
-└── .env.example                    шаблон переменных окружения
-```
-
-Кто кого импортирует в рабочем коде (циклы в Go запрещены):
-
-| пакет | импортирует |
-|---|---|
-| `cmd/app` | `transport`, `service`, `storage/local`, `storage/postgresdb`, `pgxpool` (собирает слои) |
-| `transport` | `service`, `domain` |
-| `service` | `domain` |
-| `storage/local` | `domain` |
-| `storage/postgresdb` | `domain`, `pgx` |
-| `domain` | ничего из проекта |
-
-Каждый пакет импортирует только пакеты ниже себя, поэтому циклов нет. `domain` можно импортировать из любого слоя. Про Postgres знают только `storage/postgresdb` и `cmd/app`.
-
-## Конфигурация
-
-Из переменных окружения. Локально они лежат в `.env` (в `.gitignore`), Go сам его не читает: `set -a; source .env; set +a`.
-
-| переменная | значения | если не задана или неверная |
-|---|---|---|
-| `STORAGE` | `postgres` или `memory` | `log.Fatal` |
-| `DATABASE_URL` | `postgres://user:pass@host:port/db` | при `STORAGE=postgres` — `log.Fatal` |
-| `PORT` | номер порта HTTP-сервера | если не задана — `8080`; ошибка прослушивания порта завершает сервис |
-| `TEST_DATABASE_URL` | подключение к отдельной базе `balance_test` | без переменной интеграционные тесты пропускаются; ошибка подключения или другое имя базы приводит к падению теста |
-
-При `STORAGE=postgres` main создаёт пул и проверяет связь через `Ping`: `pgxpool.New` к базе не ходит. Если `Ping` не прошёл — `log.Fatal`.
-
-В Compose `app` получает `STORAGE=postgres`, `PORT=8080` и строку подключения с хостом `db:5432`. Значения `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` подставляются из `.env` и используются для настройки базы и строки подключения сервиса.
-
-## Docker и Compose
-
-Dockerfile собирает Go-бинарник на этапе `build`, затем копирует его в образ на базе Alpine. База данных запускается отдельным контейнером из образа `postgres:18`.
+## Слои и зависимости
 
 ```text
-клиент на Mac → localhost:8080 → app:8080
-                                  │
-                                  └→ db:5432 → том pgdata
-
-psql на Mac  → localhost:5433 ──────→ db:5432
+HTTP-клиент
+  → http.Server
+  → LoggingMiddleware
+  → http.ServeMux
+  → transport.Handler
+  → service.Service
+  → service.Storage
+      ├→ local.MapStorage
+      └→ postgresdb.PostgresStorage → pgxpool → PostgreSQL
 ```
 
-`app` обращается к базе по имени сервиса `db` во внутренней сети Compose. Проброс `5433:5432` нужен для подключения с машины.
+| Компонент | Ответственность |
+|---|---|
+| `cmd/app` | Чтение конфигурации, создание зависимостей, запуск и остановка сервера |
+| `internal/transport` | HTTP-маршрутизация, декодирование запросов, формирование ответов и кодов ошибок |
+| `internal/service` | Проверка входных параметров операций, вызов интерфейса `Storage` |
+| `internal/storage/local` | Хранение балансов в памяти, атомарность через мьютекс |
+| `internal/storage/postgresdb` | SQL-операции, транзакции и преобразование ошибок PostgreSQL |
+| `internal/domain` | Общие ошибки предметной области |
+| `api/balance/v1` | Контракт Protobuf |
+| `gen/go/balance/v1` | Сгенерированные сообщения, gRPC-клиент и серверный интерфейс |
 
-- `db` проверяется через `pg_isready`; `depends_on: condition: service_healthy` задерживает запуск `app` до готовности базы. При запуске сервис также вызывает `Ping`.
-- `migrations/001_init.sql` подключён в `/docker-entrypoint-initdb.d/001_init.sql` и выполняется при инициализации пустого каталога данных.
-- Именованный том `pgdata` подключён к `/var/lib/postgresql`. `docker compose down` сохраняет данные, `docker compose down -v` удаляет том.
-- После изменения Go-кода нужен `docker compose up --build`, чтобы собрать образ с новым бинарником. `restart` перезапускает существующий контейнер.
+Зависимости создаются в `main` через конструкторы. Интерфейс `Storage` объявлен в пакете-потребителе `service`. Хранилища импортируют `domain` и не зависят от транспортного или сервисного слоя.
 
-## Middleware логирования
-
-`transport.LoggingMiddleware(next http.Handler) http.Handler` возвращает `http.HandlerFunc`, который запоминает `next` в замыкании. В `main` обёртка получает роутер и устанавливается в поле `Handler` структуры `http.Server`.
-
-На каждый запрос обёртка сохраняет `time.Now()`, вызывает `next.ServeHTTP(w, r)` и после его возврата пишет в лог метод, `r.URL.Path` и `time.Since(start)`. Через неё проходят также ответы роутера 404 и 405. HTTP-код ответа middleware пока не записывает.
-
-## Запуск и graceful shutdown
-
-`main` создаёт явный `http.Server` с адресом `":" + port` и роутером, обёрнутым в middleware. `ListenAndServe` запускается в отдельной горутине, а `main` ожидает отмены `stopCtx` через чтение из `stopCtx.Done()`.
+### Структура пакетов
 
 ```text
-SIGINT (Ctrl+C) или SIGTERM
-  → signal.NotifyContext отменяет stopCtx
-  → ожидание в main заканчивается
-  → создаётся новый shutdownCtx с таймаутом 10 секунд
-  → server.Shutdown(shutdownCtx)
-      → закрывает слушающий сокет и простаивающие соединения
-      → ждёт завершения активных HTTP-обработчиков
-  → при ошибке: запись в лог и server.Close()
-  → выход из main, defer pool.Close() в режиме PostgreSQL
+cmd/app/main.go
+api/balance/v1/balance.proto
+gen/go/balance/v1/
+  balance.pb.go
+  balance_grpc.pb.go
+internal/
+  domain/errors.go
+  service/
+    balance.go
+    balance_test.go
+  transport/
+    handler.go
+    handler_test.go
+    router.go
+    middleware.go
+  storage/
+    local/map_storage.go
+    postgresdb/
+      postgres_storage.go
+      postgres_storage_test.go
+migrations/001_init.sql
 ```
 
-При начале остановки `ListenAndServe` возвращает `http.ErrServerClosed`. Эта ошибка исключена из аварийного завершения через `errors.Is`; остальные ошибки запуска приводят к `log.Fatal`.
+## Модель данных и правила операций
 
-`Shutdown` сам процесс не завершает. `main` дожидается возврата из него перед выходом. Новый контекст ожидания создаётся от `context.Background()`: `stopCtx` к этому моменту уже отменён. Таймаут ограничивает ожидание внутри `Shutdown`, а не гарантирует завершение всего процесса за 10 секунд. В текущем коде ошибка, возвращаемая принудительным `server.Close()`, не обрабатывается.
+Деньги представлены целым числом копеек: `int64` в Go и `BIGINT` в PostgreSQL. Валюта хранения — RUB. Пользователь определяется положительным `user_id`.
 
-Для остановки приложения через Compose с запасом на ожидание можно использовать `docker compose stop -t 15 app`, оставив базу работающей. Штатная остановка без активных запросов проверена для `SIGINT` и `SIGTERM` на отдельном экземпляре с `STORAGE=memory`: после успешного `/ping` процесс завершился с кодом 0. Проверки остановки с активным запросом и сценария превышения таймаута ещё предстоят.
-
-## API
-
-Суммы — целые числа в копейках.
-
-Ошибки возвращаются как `{"error": "текст"}`. Неизвестные ошибки → 500 `{"error": "internal error"}`. Сейчас `errorHandler` не логирует исходную ошибку.
-
-### Начисление
-
-**Метод и путь:** POST /accrual
-
-**Запрос:**
-
-```json
-{"user_id": 12, "amount": 1000}
-```
-
-**Ответ 200:**
-
-```json
-{"balance": 1500}
-```
-
-**Ошибки:**
-
-| ситуация | код | текст |
-|---|---|---|
-| битый JSON или неизвестное поле | 400 | invalid JSON body |
-| `user_id` ≤ 0 | 400 | user_id must be greater than 0 |
-| `amount` ≤ 0 | 400 | amount must be greater than 0 |
-| баланс переполнит `int64` | 409 | balance overflow |
-
-Ошибки «пользователь не найден» у начисления нет: пользователь создаётся при первом начислении.
-
-### Списание
-
-**Метод и путь:** POST /debiting
-
-**Запрос:**
-
-```json
-{"user_id": 12, "amount": 1000}
-```
-
-**Ответ 200:**
-
-```json
-{"balance": 1500}
-```
-
-**Ошибки:**
-
-| ситуация | код | текст |
-|---|---|---|
-| битый JSON или неизвестное поле | 400 | invalid JSON body |
-| `user_id` не найден |404| user_id not found |
-| `user_id` ≤ 0 | 400 | user_id must be greater than 0 |
-| `amount` ≤ 0 | 400 | amount must be greater than 0 |
-| `balance` < `amount` | 409 | insufficient funds |
-
-### Перевод
-
-**Метод и путь:** POST /transfer
-
-**Запрос:**
-
-```json
-{"user_from_id": 12, "user_to_id": 15,  "amount": 1000}
-```
-
-**Ответ 200:**
-
-```json
-{"balance_user_from": 500, "balance_user_to": 1900}
-```
-
-**Ошибки:**
-
-| ситуация | код | текст |
-|---|---|---|
-| битый JSON или неизвестное поле | 400 | invalid JSON body |
-| `user_from_id` не найден |404| user_from_id not found |
-| `user_to_id` не найден |404| user_to_id not found |
-| `user_from_id` ≤ 0 | 400 | user_from_id must be greater than 0 |
-| `user_to_id` ≤ 0 | 400 | user_to_id must be greater than 0 |
-| `user_to_id` = `user_from_id` | 400 | user_to_id and user_from_id must be different |
-| `amount` ≤ 0 | 400 | amount must be greater than 0 |
-| `balance_user_from` < `amount` | 409 | insufficient funds |
-| баланс переполнит `int64` | 409 | balance overflow |
-
-
-### Баланс
-
-**Метод и путь:** GET /balance/{user_id}
-
-**Ответ 200:**
-
-```json
-{"balance": 500}
-```
-
-**Ошибки:**
-
-| ситуация | код | текст |
-|---|---|---|
-| клиент передаст невалидное значение в запросе вместо {user_id} | 400 | user_id must be a number |
-| `user_id` не найден |404| user_id not found |
-| `user_id` ≤ 0 | 400 | user_id must be greater than 0 |
-
-
-Пропущенные поля получают нулевые значения в Go-структуре. Их отклоняет service как невалидный id или сумму.
-
-## Тестирование
-
-Тесты находятся рядом с исходным кодом и используют стандартный пакет `testing`.
-
-### Service
-
-`internal/service/balance_test.go` проверяет все четыре метода. Мок `storageMock` реализует интерфейс `Storage`, записывает переданные аргументы и возвращает заранее заданные результаты и ошибки.
-
-Проверяются успешные вызовы, валидация id и суммы, запрет перевода самому себе, передача аргументов в storage и возврат его ошибок. Повторяющиеся сценарии оформлены как таблицы с `t.Run`. В тестах ранней валидации используется `NewService(nil)`: обращение к storage при ошибочных данных привело бы к падению теста.
-
-### HTTP-обработчики
-
-`internal/transport/handler_test.go` создаёт запрос через `httptest.NewRequest`, а ответ записывает в `httptest.NewRecorder`. Настоящий сетевой сервер не запускается.
-
-| операция | успешный сценарий | ошибочный сценарий |
-|---|---|---|
-| Deposit | 200 и новый баланс | 400 и `invalid JSON body` |
-| Withdraw | 200 и остаток | 409 и `insufficient funds` |
-| Transfer | 200 и оба баланса | 400 и запрет перевода самому себе |
-| Balance | 200 и баланс | 404 и `user_id not found` |
-
-Для операций используются настоящий service и `local.MapStorage`; тест невалидного JSON создаёт handler без service, поскольку запрос отклоняется до его вызова. Balance вызывается через `NewRouter(h).ServeHTTP`, чтобы роутер заполнил `r.PathValue("user_id")`. Остальные тесты вызывают метод handler напрямую.
-
-Всего восемь HTTP-тестов, каждый проверяет код и JSON-тело ответа. Отдельных тестов всех веток `errorHandler` пока нет.
-
-### PostgreSQL
-
-`internal/storage/postgresdb/postgres_storage_test.go` использует настоящий `PostgresStorage` и пул `pgxpool`. HTTP и service в этих тестах не участвуют.
-
-Подключение берётся только из `TEST_DATABASE_URL`. При пустой переменной вызывается `t.Skip`; при ошибке создания пула или `Ping` — `t.Fatalf`. Перед очисткой проверяется точное имя базы `balance_test`, затем выполняется `TRUNCATE TABLE user_balance`. Схема применяется заранее из `migrations/001_init.sql`.
-
-| тест | сценарий и ожидаемый результат |
+| Операция | Правила |
 |---|---|
-| `TestTransferRollbackRecipientNotFound` | отправитель с 1000 переводит 300 отсутствующему получателю; возвращается `ErrRecipientNotFound`, отдельное чтение баланса подтверждает откат и остаток 1000 |
-| `TestWithdrawConcurrent` | 200 горутин списывают по 1000 с начального баланса 100000; ровно 100 успешных операций, 100 `ErrInsufficientFunds`, баланс 0 |
-| `TestTransferConcurrentOppositeDirections` | два пользователя с балансами по 1000, по 100 переводов в каждую сторону по 1 копейке; все 200 успешны, конечные балансы по 1000 |
+| Начисление | Положительные ID и сумма; отсутствующий пользователь создаётся; переполнение отклоняется |
+| Списание | Положительные ID и сумма; пользователь существует; средств достаточно |
+| Перевод | Положительные и разные ID, положительная сумма; оба пользователя существуют; достаточно средств у отправителя и места в `int64` у получателя |
+| Получение баланса | Положительный ID; пользователь существует |
 
-Параллельные операции запускаются внутри теста. До запуска каждой горутины вызывается `wg.Add(1)`, внутри откладывается `wg.Done()`. Каждая горутина записывает локальную ошибку в свой элемент среза; чтение результатов и проверка балансов выполняются после `wg.Wait()`.
+Service проверяет параметры запроса: положительные ID и сумму, различие участников перевода. Проверки текущего состояния — наличие пользователя, достаточность средств, переполнение — выполняются в storage атомарно с изменением данных.
 
-Сами тесты идут последовательно, без `t.Parallel()`, поскольку очищают общую таблицу. Несколько процессов с этими тестами на одной базе также будут мешать друг другу.
+### Схема PostgreSQL
 
-Тест встречных переводов использует `context.WithTimeout` на 10 секунд с `defer cancel()`. Дедлайн общий для подготовки, операций и финальных чтений. Контекст не останавливает горутины сам: pgx реагирует на отмену и возвращает ошибку, которую обнаруживают проверки. Флаг `-race` проверяет гонки в Go-коде; защиту данных в базе подтверждают результаты операций и конечные балансы.
+Схема определена в [migrations/001_init.sql](../migrations/001_init.sql).
 
-### Запуск
+| Колонка | Тип | Ограничения |
+|---|---|---|
+| `user_id` | `BIGINT` | `PRIMARY KEY`, `user_id_positive CHECK (user_id > 0)` |
+| `balance` | `BIGINT` | `NOT NULL DEFAULT 0`, `balance_non_negative CHECK (balance >= 0)` |
 
-Service и HTTP-тесты не требуют PostgreSQL или переменных окружения:
-
-```bash
-go test -race ./internal/service ./internal/transport
-go test -v ./internal/service
-go test -run '^TestBalance' -v ./internal/transport
-```
-
-Для интеграционных тестов сначала один раз создаётся база `balance_test` и применяется схема. Точные команды подготовки — в [README](../README.md#интеграционные-тесты-postgresql). Перед запуском из корня проекта:
-
-```bash
-docker compose up -d --wait db
-set -a; source .env; set +a
-go test -race -count=1 -timeout=30s -v ./internal/storage/postgresdb
-```
-
-Для всех пакетов используется `go test -race -count=1 -timeout=30s ./...`: с заданным `TEST_DATABASE_URL` выполнятся и интеграционные тесты, без него они будут пропущены. Результаты не берутся из кеша благодаря `-count=1`; `-timeout=30s` ограничивает время работы каждого тестового процесса.
-
-## Storage
-
-Интерфейс объявлен в `service` (там, где он нужен):
+## Контракт Storage
 
 ```go
 type Storage interface {
-	Balance(ctx context.Context, userID int64) (int64, error)
-	Deposit(ctx context.Context, userID, amount int64) (int64, error)
-	Withdraw(ctx context.Context, userID, amount int64) (int64, error)
-	Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error)
+    Balance(ctx context.Context, userID int64) (int64, error)
+    Deposit(ctx context.Context, userID, amount int64) (int64, error)
+    Withdraw(ctx context.Context, userID, amount int64) (int64, error)
+    Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error)
 }
 ```
 
-Каждая операция атомарна: проверки, которые зависят от текущих данных, выполняются внутри операции вместе с изменением.
+Методы возвращают балансы после успешной операции и ошибки из `domain` для ожидаемых отказов. Остальные ошибки передаются вызывающему слою. Перевод атомарно изменяет оба счёта.
 
-| операция | принимает | возвращает | ошибки |
-|---|---|---|---|
-| Deposit (начисление) | user_id, amount | balance | `ErrBalanceOverflow` |
-| Withdraw (списание) | user_id, amount | balance | `ErrNotFound`, `ErrInsufficientFunds` |
-| Transfer (перевод) | user_from_id, user_to_id, amount | balance_user_from, balance_user_to | `ErrSenderNotFound`, `ErrRecipientNotFound`, `ErrInsufficientFunds` (у отправителя), `ErrBalanceOverflow` (у получателя) |
-| Balance (баланс) | user_id | balance | `ErrNotFound` |
+### Хранилище в памяти
 
-Storage не проверяет перевод самому себе: при `from = to` ответ был бы неверным. Эту проверку обязан сделать service.
+`MapStorage` содержит `map[int64]int64` и один `sync.Mutex`. Каждый метод удерживает мьютекс на протяжении чтения, проверок и изменений. Все проверки перевода выполняются до изменения балансов.
 
-### Две реализации
-
-| | `local.MapStorage` | `postgresdb.PostgresStorage` |
-|---|---|---|
-| данные | `map[int64]int64` | таблица `user_balance` |
-| атомарность | один `sync.Mutex` на всё хранилище | блокировки строк в Postgres |
-| `ctx` | принимает, не использует | передаёт в каждый запрос pgx |
-| несколько копий сервиса | у каждой свои данные и свой мьютекс | общая база, защита работает |
+Данные принадлежат процессу и не разделяются между экземплярами приложения. Параметр `ctx` принимается для соответствия интерфейсу и не используется.
 
 ### PostgreSQL
 
-Схема (`migrations/001_init.sql`):
+`PostgresStorage` получает `*pgxpool.Pool` через конструктор и передаёт контекст операции в pgx.
 
-| колонка | тип | ограничения |
+| Метод | Реализация | Атомарность |
 |---|---|---|
-| `user_id` | `bigint` | `PRIMARY KEY`, `user_id_positive CHECK (user_id > 0)` |
-| `balance` | `bigint` | `NOT NULL DEFAULT 0`, `balance_non_negative CHECK (balance >= 0)` |
+| `Balance` | `SELECT balance ... WHERE user_id = $1` | Один запрос |
+| `Deposit` | `INSERT ... ON CONFLICT (user_id) DO UPDATE SET balance = user_balance.balance + EXCLUDED.balance RETURNING balance` | Создание и начисление выполняются одним запросом |
+| `Withdraw` | `UPDATE ... SET balance = balance - $2 WHERE user_id = $1 RETURNING balance` | `UPDATE` блокирует строку, ограничение `CHECK` запрещает отрицательный результат |
+| `Transfer` | Транзакция, блокировка участников, два `UPDATE ... RETURNING`, `COMMIT` | Оба изменения фиксируются вместе; при ошибке предусмотрен `Rollback` |
 
-`CHECK` — последняя линия защиты: даже при баге в коде минус в таблицу не попадёт.
+При переводе строки блокируются запросом `SELECT ... WHERE user_id IN ($1, $2) ORDER BY user_id FOR UPDATE`. Единый порядок по `user_id` предотвращает циклическое ожидание блокировок между встречными переводами. Все запросы перевода выполняются через `tx`.
 
-Как устроена каждая операция:
+### Преобразование ошибок базы
 
-| операция | SQL | почему атомарно |
-|---|---|---|
-| Balance | `SELECT balance ... WHERE user_id = $1` | один запрос |
-| Deposit | `INSERT ... ON CONFLICT (user_id) DO UPDATE SET balance = user_balance.balance + EXCLUDED.balance RETURNING balance` | один запрос; «создать или прибавить» решает сама база, без гонки SELECT → INSERT |
-| Withdraw | `UPDATE ... SET balance = balance - $2 WHERE user_id = $1 RETURNING balance` | `UPDATE` блокирует строку; параллельное списание ждёт и считает от нового значения; минус отклоняет `CHECK` |
-| Transfer | транзакция: `SELECT ... WHERE user_id IN ($1, $2) ORDER BY user_id FOR UPDATE`, два `UPDATE ... RETURNING`, `COMMIT` | обе строки заблокированы до конца транзакции; при любой ошибке `defer tx.Rollback` откатывает оба изменения |
-
-Блокировки в переводе берутся в порядке возрастания `user_id`. Иначе встречные переводы A → B и B → A ждут друг друга (дедлок, `40P01`). Проверено: 200 встречных переводов — без сортировки 171 дедлок, с сортировкой ни одного.
-
-Ошибки Postgres → ошибки `domain`:
-
-| что вернул pgx | когда | ошибка `domain` |
-|---|---|---|
-| `pgx.ErrNoRows` (`errors.Is`) | `UPDATE ... RETURNING` не нашёл строку | `ErrNotFound`, в переводе `ErrSenderNotFound` / `ErrRecipientNotFound` |
-| `*pgconn.PgError`, `ConstraintName = balance_non_negative` (`errors.As`) | баланс ушёл бы в минус | `ErrInsufficientFunds` |
-| `*pgconn.PgError`, `Code = 22003` | `bigint out of range` | `ErrBalanceOverflow` |
-| любая другая | база недоступна, отмена `ctx` и т.п. | возвращается как есть → 500 |
-
-Сравнивается `ConstraintName`, а не `Code 23514`: этот код у любого нарушенного `CHECK`. И не `Message`: это текст для человека, он зависит от версии и локали. Коды и имена ограничений — константы в `postgresdb`, `domain` про Postgres не знает.
-
-## Ошибки между слоями
-
-Ошибки объявлены один раз в `internal/domain`. Service возвращает свои ошибки проверки запроса, а ошибки storage пропускает наверх без изменений. Все реализации storage (память и Postgres) возвращают одни и те же значения. Handler переводит ошибку в HTTP-код через `errors.Is`:
-
-| ошибка `domain` | кто возвращает | HTTP-код | текст ответа |
-|---|---|---|---|
-| `ErrInvalidUserID` | service | 400 | `user_id must be greater than 0` |
-| `ErrInvalidSenderID` | service | 400 | `user_from_id must be greater than 0` |
-| `ErrInvalidRecipientID` | service | 400 | `user_to_id must be greater than 0` |
-| `ErrInvalidAmount` | service | 400 | `amount must be greater than 0` |
-| `ErrSelfTransfer` | service | 400 | `user_to_id and user_from_id must be different` |
-| `ErrNotFound` | storage | 404 | `user_id not found` |
-| `ErrSenderNotFound` | storage | 404 | `user_from_id not found` |
-| `ErrRecipientNotFound` | storage | 404 | `user_to_id not found` |
-| `ErrInsufficientFunds` | storage | 409 | `insufficient funds` |
-| `ErrBalanceOverflow` | storage | 409 | `balance overflow` |
-| любая другая | — | 500 | `internal error` |
-
-Ошибки разбора запроса (битый JSON, `user_id` в пути не число) handler находит сам, до вызова service, и отвечает 400.
-
-Тексты ответа с именами полей JSON подставляет handler. Тексты самих ошибок в `domain` не должны знать про JSON.
-
-## Context
-
-| где | какой | зачем |
-|---|---|---|
-| `main` | `context.Background()` | создание пула и `Ping` при запуске: запроса ещё нет |
-| ожидание сигнала в `main` | `signal.NotifyContext` → `stopCtx` | отмена по `SIGINT` или `SIGTERM`; закрытие канала `Done` завершает ожидание |
-| остановка HTTP-сервера | отдельный `context.WithTimeout` → `shutdownCtx` | до 10 секунд на завершение обработки запросов; родитель `Background`, поскольку `stopCtx` уже отменён |
-| handler | `r.Context()` | отменяется, когда клиент отключился; pgx прерывает запрос, транзакция откатывается, соединение возвращается в пул |
-| тест встречных переводов | `context.WithTimeout` | общий дедлайн 10 секунд на тест, `defer cancel()` освобождает ресурсы таймера |
-
-`ctx` — первый параметр, в поля структур его не кладём: у каждого запроса он свой.
-
-
-## План расширения
-
-После проверки graceful shutdown с активным запросом и по таймауту:
-
-1. gRPC как второй транспорт для четырёх операций с общим service.
-2. История операций: запись вместе с изменением баланса в одной транзакции, пагинация и сортировка.
-3. Конвертация валют через внешний API, Redis для кеширования курсов с TTL.
-4. Kafka: события операций через transactional outbox в PostgreSQL и отдельный consumer уведомлений.
-
-Эти расширения согласованы как учебный план и пока не реализованы.
-
-## Решения и вопросы по ТЗ
-
-| вопрос | решение |
+| Ошибка pgx / PostgreSQL | Ошибка предметной области |
 |---|---|
-| код ошибки недостаточно средств | 409 «запрос корректный, но конфликтует с текущим состоянием баланса»  |
-| В чём отдавать баланс, если в ТЗ «баланс всегда в рублях»? | В копейках (`int64`): валюта — рубли, единицы — копейки. |
-| Что, если начисление переполнит `int64`? | Проверка в storage , ошибка 409 «запрос корректный, но конфликтует с текущим состоянием баланса» |
-| Начисление пользователю, которого ещё нет? | Создаём его (ТЗ, детали, п. 2). |
-| обращение к несуществующему пользователю | перевод несуществующему получателю → 404, начисление → создание нового пользователя |
-| Где объявлять общие ошибки? | В отдельном пакете `internal/domain`. В storage — handler зависел бы от конкретной реализации; в service — storage импортировал бы верхний слой, риск циклического импорта. |
-| Как в переводе сообщить, кто именно не найден? | Две отдельные ошибки: `ErrSenderNotFound` и `ErrRecipientNotFound`. Для «недостаточно средств» и переполнения хватает общих ошибок: первое бывает только у отправителя, второе — только у получателя. Альтернатива — тип ошибки с полем `UserID` и `errors.As`, для четырёх методов избыточно. |
-| Где проверять «хватает ли денег» в Postgres? | В самой базе: `CHECK (balance >= 0)` + один `UPDATE`. Отдельный `SELECT` перед `UPDATE` — гонка «прочитал → проверил → изменил». |
-| Где начинать транзакцию? | Внутри метода storage. Не в middleware и не в service: у `MapStorage` транзакций нет, интерфейс обещает только атомарность операции. |
-| Что делать, если база недоступна при старте? | Падать (`log.Fatal`), а не переключаться молча на map: иначе деньги лягут в память и пропадут при перезапуске. Хранилище выбирается явно через `STORAGE`. |
-| Механизм миграций? | По ТЗ не нужен: итоговая схема в `migrations/001_init.sql`. Пока боевой базы нет, правим этот файл; потом изменения — только новыми файлами `002_...`. |
-| Где хранить `pgErr` для `errors.As`? | Локальная переменная в каждом методе. Глобальная — гонка данных между запросами (проверено `-race`). |
+| `pgx.ErrNoRows` при чтении или обновлении | `ErrNotFound`; в переводе — `ErrSenderNotFound` или `ErrRecipientNotFound` |
+| Нарушение ограничения `balance_non_negative` | `ErrInsufficientFunds` |
+| SQLSTATE `22003`, переполнение `BIGINT` | `ErrBalanceOverflow` |
+| Прочие ошибки | Возвращаются без изменения |
 
+Ошибки проверяются через `errors.Is` и `errors.As`. Для ограничения используется `PgError.ConstraintName`, для переполнения — `PgError.Code`. Текст сообщения PostgreSQL не участвует в классификации.
+
+## HTTP API
+
+Роутер использует шаблоны `net/http` вида `METHOD /path`. Операции с балансом возвращают JSON.
+
+| Метод и путь | Запрос | Ответ 200 |
+|---|---|---|
+| `POST /accrual` | `{"user_id": 12, "amount": 1000}` | `{"balance": 1500}` |
+| `POST /debiting` | `{"user_id": 12, "amount": 1000}` | `{"balance": 500}` |
+| `POST /transfer` | `{"user_from_id": 12, "user_to_id": 15, "amount": 1000}` | `{"balance_user_from": 500, "balance_user_to": 1900}` |
+| `GET /balance/{user_id}` | ID из пути | `{"balance": 1500}` |
+| `GET /ping` | Без тела | Текст `pong` |
+
+Значения балансов в таблице иллюстрируют формат ответа и зависят от исходных данных. Последовательные [примеры запросов](../README.md#http-api) приведены в README.
+
+Декодер JSON использует `DisallowUnknownFields`. Ошибки синтаксиса, типов и неизвестные поля приводят к 400 `invalid JSON body`. Пропущенные числовые поля принимают нулевое значение и отклоняются сервисной валидацией. ID из пути разбирается через `strconv.ParseInt`; ошибка разбора даёт 400 `user_id must be a number`.
+
+Обработчик устанавливает `Content-Type: application/json`, записывает HTTP-код, затем тело. Ошибка кодирования ответа логируется. Ответы роутера 404 и 405 имеют текстовый формат.
+
+### Ошибки операций
+
+Формат JSON-ошибки — `{"error": "текст"}`. `errorHandler` сопоставляет ошибки с HTTP-кодами через `errors.Is`.
+
+| Ошибка | Источник | HTTP-код | Текст ответа |
+|---|---|---|---|
+| `ErrInvalidUserID` | Service | 400 | `user_id must be greater than 0` |
+| `ErrInvalidSenderID` | Service | 400 | `user_from_id must be greater than 0` |
+| `ErrInvalidRecipientID` | Service | 400 | `user_to_id must be greater than 0` |
+| `ErrInvalidAmount` | Service | 400 | `amount must be greater than 0` |
+| `ErrSelfTransfer` | Service | 400 | `user_to_id and user_from_id must be different` |
+| `ErrNotFound` | Storage | 404 | `user_id not found` |
+| `ErrSenderNotFound` | Storage | 404 | `user_from_id not found` |
+| `ErrRecipientNotFound` | Storage | 404 | `user_to_id not found` |
+| `ErrInsufficientFunds` | Storage | 409 | `insufficient funds` |
+| `ErrBalanceOverflow` | Storage | 409 | `balance overflow` |
+| Неизвестная ошибка | Любой слой | 500 | `internal error` |
+
+Ошибки предметной области объявлены в `internal/domain` и не содержат HTTP-кодов или имён JSON-полей. Публичные тексты формирует транспортный слой.
+
+## gRPC
+
+### Текущая реализация
+
+[balance.proto](../api/balance/v1/balance.proto) содержит unary RPC `/balance.v1.BalanceService/GetBalance`:
+
+| Сообщение | Поле | Тип |
+|---|---|---|
+| `BalanceRequest` | `user_id` | `int64` |
+| `BalanceResponse` | `balance`, в копейках | `int64` |
+
+Пространство имён Protobuf — `balance.v1`. Путь импорта Go — `github.com/irishout/balance-user-api/gen/go/balance/v1`; имя сгенерированного Go-пакета — `v1`.
+
+| Файл | Содержимое |
+|---|---|
+| `balance.pb.go` | Типы сообщений и поддержка Protobuf |
+| `balance_grpc.pb.go` | `BalanceServiceClient`, `BalanceServiceServer`, `UnimplementedBalanceServiceServer`, функция регистрации `RegisterBalanceServiceServer` |
+
+Собственный обработчик и сетевой сервер отсутствуют. Библиотеки gRPC и Protobuf требуются для сборки сгенерированного пакета. Команды установки инструментов, генерации и синхронизации зависимостей находятся в [README](../README.md#генерация-кода).
+
+Контракт и результат генерации версионируются в Git. Изменения контрактов сопровождаются повторной генерацией; ручные изменения сгенерированных файлов не предусмотрены. Текущий Dockerfile использует готовые Go-исходники.
+
+### Целевая организация транспорта
+
+Выбор `TRANSPORT=http|grpc` предусматривает запуск одного сервера на процесс:
+
+```text
+TRANSPORT=http → HTTP-сервер → HTTP-handler ─┐
+                                           ├→ service.Service → Storage
+TRANSPORT=grpc → gRPC-сервер → gRPC-handler ─┘
+```
+
+Service и storage создаются до выбора транспорта. Планируемый пакет `internal/transport/grpcapi` реализует серверный интерфейс из сгенерированного кода, вызывает существующий service и преобразует ошибки в статусы gRPC. Запуск и завершение сервера зависят от выбранного транспорта.
+
+В текущей реализации `main` не читает `TRANSPORT` и всегда запускает HTTP-сервер. Передача `TRANSPORT=grpc` в окружение не включает gRPC.
+
+## Конфигурация
+
+| Переменная | Поведение |
+|---|---|
+| `STORAGE` | Обязательный выбор `postgres` или `memory`; неизвестное значение завершает приложение с ошибкой |
+| `DATABASE_URL` | Обязательна при `STORAGE=postgres` |
+| `PORT` | HTTP-порт, по умолчанию 8080 |
+| `TEST_DATABASE_URL` | Подключение интеграционных тестов к базе `balance_test` |
+| `TRANSPORT` | Зарезервирована для выбора сервера; в текущем `main` не используется |
+
+Конфигурация читается из окружения процесса. Локальный `.env` загружается оболочкой; Compose использует его для подстановок. При запуске в режиме PostgreSQL `main` создаёт пул и проверяет соединение через `Ping`. Ошибка подключения завершает приложение; перехода на другое хранилище нет.
+
+## Жизненный цикл сервера
+
+### Запуск и обработка запросов
+
+`main` создаёт `http.Server` с адресом `":" + port` и роутером, обёрнутым в `LoggingMiddleware`. `ListenAndServe` выполняется в отдельной горутине. Подписка `signal.NotifyContext` обрабатывает `SIGINT` и `SIGTERM`.
+
+Middleware записывает метод, путь и длительность после возврата из следующего обработчика. Логируются также обращения, для которых роутер возвращает 404 или 405. HTTP-код ответа в лог не включён.
+
+### Graceful shutdown
+
+После получения сигнала выполняется последовательность:
+
+1. Создание отдельного `shutdownCtx` от `context.Background()` с таймаутом 10 секунд.
+2. Вызов `server.Shutdown`: закрытие слушающего сокета и простаивающих соединений, ожидание завершения активных HTTP-обработчиков.
+3. При ошибке `Shutdown` — запись ошибки в лог и принудительное закрытие через `server.Close()`.
+4. Выход из `main` и закрытие пула PostgreSQL через `defer pool.Close()`.
+
+`http.ErrServerClosed` при штатной остановке исключена из аварийного завершения. Остальные ошибки `ListenAndServe` приводят к `log.Fatal`. Лимит 10 секунд относится к ожиданию HTTP-обработчиков, а не ко всему времени завершения процесса.
+
+### Контексты
+
+| Контекст | Назначение |
+|---|---|
+| Стартовый `context.Background()` | Создание пула и проверка PostgreSQL |
+| `r.Context()` | Передаётся из HTTP-handler через service и storage в pgx |
+| `stopCtx` | Получение сигнала остановки в `main` |
+| `shutdownCtx` | Ограниченное ожидание завершения HTTP-запросов после сигнала |
+
+Контекст передаётся первым параметром методов. Контекст запроса и контекст остановки разделены, чтобы получение системного сигнала не отменяло активные запросы до истечения периода ожидания.
+
+## Развёртывание
+
+Dockerfile использует многоэтапную сборку: `golang:1.26-alpine` компилирует бинарник с `CGO_ENABLED=0`, затем бинарник копируется в `alpine:3.22`.
+
+Compose запускает два сервиса:
+
+| Сервис | Настройки |
+|---|---|
+| `app` | Сборка из Dockerfile, порт 8080, `STORAGE=postgres`, подключение к `db:5432` |
+| `db` | `postgres:18`, проброс `5433:5432`, healthcheck через `pg_isready`, том `pgdata` |
+
+```text
+HTTP-клиент на хосте → localhost:8080 → app:8080
+                                         │
+                                         └→ db:5432 → pgdata
+psql на хосте       → localhost:5433 ──────→ db:5432
+```
+
+`app` зависит от состояния `service_healthy` базы. SQL-схема подключена в `/docker-entrypoint-initdb.d/001_init.sql` и выполняется при инициализации пустого каталога данных. Именованный том PostgreSQL 18 подключён к `/var/lib/postgresql`. Удаление контейнеров сохраняет данные; `docker compose down -v` удаляет том.
+
+## Тестирование
+
+| Уровень | Зависимости | Проверки |
+|---|---|---|
+| Service | Мок `Storage` | Валидация параметров, передача аргументов, результатов и ошибок |
+| HTTP | Service и `MapStorage`, `httptest` | Успешные ответы четырёх операций, выбранные ошибки, HTTP-коды и JSON |
+| PostgreSQL | Отдельная база `balance_test` | Откат перевода, параллельные списания, встречные переводы |
+
+Тесты service используют таблицы сценариев и `t.Run`. HTTP-тесты баланса проходят через роутер для заполнения `r.PathValue`; остальные вызывают метод handler напрямую.
+
+Интеграционные тесты проверяют имя базы перед очисткой таблицы через `TRUNCATE`. Тесты выполняются последовательно; параллельность организована внутри отдельных сценариев через горутины и `sync.WaitGroup`. Результат каждой операции записывается в отдельный элемент среза и проверяется после завершения всех горутин.
+
+| Сценарий | Ожидаемый результат |
+|---|---|
+| Перевод 300 отсутствующему получателю с начального баланса 1000 | `ErrRecipientNotFound`, баланс отправителя 1000 |
+| 200 списаний по 1000 с баланса 100000 | 100 успешных операций, 100 `ErrInsufficientFunds`, баланс 0 |
+| По 100 переводов в обоих направлениях между балансами по 1000 | 200 успешных операций, конечные балансы по 1000 |
+
+У встречных переводов общий дедлайн 10 секунд. Без `TEST_DATABASE_URL` интеграционные тесты пропускаются; ошибки подключения приводят к неуспешному результату. Подготовка базы и [команды тестирования](../README.md#тестирование) приведены в README.
