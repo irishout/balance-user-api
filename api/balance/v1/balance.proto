@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package balance.v1;
+
+option go_package = "github.com/irishout/balance-user-api/gen/go/balance/v1";
+
+message BalanceRequest {
+  int64 user_id = 1;
+}
+message BalanceResponse {
+  int64 balance = 1;
+}
+
+service BalanceService {
+  rpc GetBalance(BalanceRequest) returns (BalanceResponse);
+}
