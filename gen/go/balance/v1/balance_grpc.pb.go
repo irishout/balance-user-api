@@ -20,6 +20,9 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	BalanceService_GetBalance_FullMethodName = "/balance.v1.BalanceService/GetBalance"
+	BalanceService_Deposit_FullMethodName    = "/balance.v1.BalanceService/Deposit"
+	BalanceService_Withdraw_FullMethodName   = "/balance.v1.BalanceService/Withdraw"
+	BalanceService_Transfer_FullMethodName   = "/balance.v1.BalanceService/Transfer"
 )
 
 // BalanceServiceClient is the client API for BalanceService service.
@@ -27,6 +30,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type BalanceServiceClient interface {
 	GetBalance(ctx context.Context, in *BalanceRequest, opts ...grpc.CallOption) (*BalanceResponse, error)
+	Deposit(ctx context.Context, in *DepositRequest, opts ...grpc.CallOption) (*BalanceResponse, error)
+	Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*BalanceResponse, error)
+	Transfer(ctx context.Context, in *TransferRequest, opts ...grpc.CallOption) (*TransferResponse, error)
 }
 
 type balanceServiceClient struct {
@@ -47,11 +53,44 @@ func (c *balanceServiceClient) GetBalance(ctx context.Context, in *BalanceReques
 	return out, nil
 }
 
+func (c *balanceServiceClient) Deposit(ctx context.Context, in *DepositRequest, opts ...grpc.CallOption) (*BalanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BalanceResponse)
+	err := c.cc.Invoke(ctx, BalanceService_Deposit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *balanceServiceClient) Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*BalanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BalanceResponse)
+	err := c.cc.Invoke(ctx, BalanceService_Withdraw_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *balanceServiceClient) Transfer(ctx context.Context, in *TransferRequest, opts ...grpc.CallOption) (*TransferResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransferResponse)
+	err := c.cc.Invoke(ctx, BalanceService_Transfer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BalanceServiceServer is the server API for BalanceService service.
 // All implementations must embed UnimplementedBalanceServiceServer
 // for forward compatibility.
 type BalanceServiceServer interface {
 	GetBalance(context.Context, *BalanceRequest) (*BalanceResponse, error)
+	Deposit(context.Context, *DepositRequest) (*BalanceResponse, error)
+	Withdraw(context.Context, *WithdrawRequest) (*BalanceResponse, error)
+	Transfer(context.Context, *TransferRequest) (*TransferResponse, error)
 	mustEmbedUnimplementedBalanceServiceServer()
 }
 
@@ -64,6 +103,15 @@ type UnimplementedBalanceServiceServer struct{}
 
 func (UnimplementedBalanceServiceServer) GetBalance(context.Context, *BalanceRequest) (*BalanceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetBalance not implemented")
+}
+func (UnimplementedBalanceServiceServer) Deposit(context.Context, *DepositRequest) (*BalanceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Deposit not implemented")
+}
+func (UnimplementedBalanceServiceServer) Withdraw(context.Context, *WithdrawRequest) (*BalanceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Withdraw not implemented")
+}
+func (UnimplementedBalanceServiceServer) Transfer(context.Context, *TransferRequest) (*TransferResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Transfer not implemented")
 }
 func (UnimplementedBalanceServiceServer) mustEmbedUnimplementedBalanceServiceServer() {}
 func (UnimplementedBalanceServiceServer) testEmbeddedByValue()                        {}
@@ -104,6 +152,60 @@ func _BalanceService_GetBalance_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BalanceService_Deposit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DepositRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BalanceServiceServer).Deposit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BalanceService_Deposit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BalanceServiceServer).Deposit(ctx, req.(*DepositRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BalanceService_Withdraw_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BalanceServiceServer).Withdraw(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BalanceService_Withdraw_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BalanceServiceServer).Withdraw(ctx, req.(*WithdrawRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BalanceService_Transfer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TransferRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BalanceServiceServer).Transfer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BalanceService_Transfer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BalanceServiceServer).Transfer(ctx, req.(*TransferRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BalanceService_ServiceDesc is the grpc.ServiceDesc for BalanceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -114,6 +216,18 @@ var BalanceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetBalance",
 			Handler:    _BalanceService_GetBalance_Handler,
+		},
+		{
+			MethodName: "Deposit",
+			Handler:    _BalanceService_Deposit_Handler,
+		},
+		{
+			MethodName: "Withdraw",
+			Handler:    _BalanceService_Withdraw_Handler,
+		},
+		{
+			MethodName: "Transfer",
+			Handler:    _BalanceService_Transfer_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

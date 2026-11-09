@@ -109,6 +109,222 @@ func (x *BalanceResponse) GetBalance() int64 {
 	return 0
 }
 
+type DepositRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Amount        int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DepositRequest) Reset() {
+	*x = DepositRequest{}
+	mi := &file_api_balance_v1_balance_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DepositRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DepositRequest) ProtoMessage() {}
+
+func (x *DepositRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_balance_v1_balance_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DepositRequest.ProtoReflect.Descriptor instead.
+func (*DepositRequest) Descriptor() ([]byte, []int) {
+	return file_api_balance_v1_balance_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *DepositRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *DepositRequest) GetAmount() int64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+type WithdrawRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Amount        int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawRequest) Reset() {
+	*x = WithdrawRequest{}
+	mi := &file_api_balance_v1_balance_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawRequest) ProtoMessage() {}
+
+func (x *WithdrawRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_balance_v1_balance_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawRequest.ProtoReflect.Descriptor instead.
+func (*WithdrawRequest) Descriptor() ([]byte, []int) {
+	return file_api_balance_v1_balance_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *WithdrawRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *WithdrawRequest) GetAmount() int64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+type TransferResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	BalanceUserFrom int64                  `protobuf:"varint,1,opt,name=balance_user_from,json=balanceUserFrom,proto3" json:"balance_user_from,omitempty"`
+	BalanceUserTo   int64                  `protobuf:"varint,2,opt,name=balance_user_to,json=balanceUserTo,proto3" json:"balance_user_to,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *TransferResponse) Reset() {
+	*x = TransferResponse{}
+	mi := &file_api_balance_v1_balance_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransferResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransferResponse) ProtoMessage() {}
+
+func (x *TransferResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_balance_v1_balance_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransferResponse.ProtoReflect.Descriptor instead.
+func (*TransferResponse) Descriptor() ([]byte, []int) {
+	return file_api_balance_v1_balance_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *TransferResponse) GetBalanceUserFrom() int64 {
+	if x != nil {
+		return x.BalanceUserFrom
+	}
+	return 0
+}
+
+func (x *TransferResponse) GetBalanceUserTo() int64 {
+	if x != nil {
+		return x.BalanceUserTo
+	}
+	return 0
+}
+
+type TransferRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserFromId    int64                  `protobuf:"varint,1,opt,name=user_from_id,json=userFromId,proto3" json:"user_from_id,omitempty"`
+	UserToId      int64                  `protobuf:"varint,2,opt,name=user_to_id,json=userToId,proto3" json:"user_to_id,omitempty"`
+	Amount        int64                  `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransferRequest) Reset() {
+	*x = TransferRequest{}
+	mi := &file_api_balance_v1_balance_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransferRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransferRequest) ProtoMessage() {}
+
+func (x *TransferRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_balance_v1_balance_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransferRequest.ProtoReflect.Descriptor instead.
+func (*TransferRequest) Descriptor() ([]byte, []int) {
+	return file_api_balance_v1_balance_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TransferRequest) GetUserFromId() int64 {
+	if x != nil {
+		return x.UserFromId
+	}
+	return 0
+}
+
+func (x *TransferRequest) GetUserToId() int64 {
+	if x != nil {
+		return x.UserToId
+	}
+	return 0
+}
+
+func (x *TransferRequest) GetAmount() int64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
 var File_api_balance_v1_balance_proto protoreflect.FileDescriptor
 
 const file_api_balance_v1_balance_proto_rawDesc = "" +
@@ -118,10 +334,28 @@ const file_api_balance_v1_balance_proto_rawDesc = "" +
 	"\x0eBalanceRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\"+\n" +
 	"\x0fBalanceResponse\x12\x18\n" +
-	"\abalance\x18\x01 \x01(\x03R\abalance2W\n" +
+	"\abalance\x18\x01 \x01(\x03R\abalance\"A\n" +
+	"\x0eDepositRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x16\n" +
+	"\x06amount\x18\x02 \x01(\x03R\x06amount\"B\n" +
+	"\x0fWithdrawRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x16\n" +
+	"\x06amount\x18\x02 \x01(\x03R\x06amount\"f\n" +
+	"\x10TransferResponse\x12*\n" +
+	"\x11balance_user_from\x18\x01 \x01(\x03R\x0fbalanceUserFrom\x12&\n" +
+	"\x0fbalance_user_to\x18\x02 \x01(\x03R\rbalanceUserTo\"i\n" +
+	"\x0fTransferRequest\x12 \n" +
+	"\fuser_from_id\x18\x01 \x01(\x03R\n" +
+	"userFromId\x12\x1c\n" +
+	"\n" +
+	"user_to_id\x18\x02 \x01(\x03R\buserToId\x12\x16\n" +
+	"\x06amount\x18\x03 \x01(\x03R\x06amount2\xa8\x02\n" +
 	"\x0eBalanceService\x12E\n" +
 	"\n" +
-	"GetBalance\x12\x1a.balance.v1.BalanceRequest\x1a\x1b.balance.v1.BalanceResponseB8Z6github.com/irishout/balance-user-api/gen/go/balance/v1b\x06proto3"
+	"GetBalance\x12\x1a.balance.v1.BalanceRequest\x1a\x1b.balance.v1.BalanceResponse\x12B\n" +
+	"\aDeposit\x12\x1a.balance.v1.DepositRequest\x1a\x1b.balance.v1.BalanceResponse\x12D\n" +
+	"\bWithdraw\x12\x1b.balance.v1.WithdrawRequest\x1a\x1b.balance.v1.BalanceResponse\x12E\n" +
+	"\bTransfer\x12\x1b.balance.v1.TransferRequest\x1a\x1c.balance.v1.TransferResponseB8Z6github.com/irishout/balance-user-api/gen/go/balance/v1b\x06proto3"
 
 var (
 	file_api_balance_v1_balance_proto_rawDescOnce sync.Once
@@ -135,16 +369,26 @@ func file_api_balance_v1_balance_proto_rawDescGZIP() []byte {
 	return file_api_balance_v1_balance_proto_rawDescData
 }
 
-var file_api_balance_v1_balance_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_api_balance_v1_balance_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_api_balance_v1_balance_proto_goTypes = []any{
-	(*BalanceRequest)(nil),  // 0: balance.v1.BalanceRequest
-	(*BalanceResponse)(nil), // 1: balance.v1.BalanceResponse
+	(*BalanceRequest)(nil),   // 0: balance.v1.BalanceRequest
+	(*BalanceResponse)(nil),  // 1: balance.v1.BalanceResponse
+	(*DepositRequest)(nil),   // 2: balance.v1.DepositRequest
+	(*WithdrawRequest)(nil),  // 3: balance.v1.WithdrawRequest
+	(*TransferResponse)(nil), // 4: balance.v1.TransferResponse
+	(*TransferRequest)(nil),  // 5: balance.v1.TransferRequest
 }
 var file_api_balance_v1_balance_proto_depIdxs = []int32{
 	0, // 0: balance.v1.BalanceService.GetBalance:input_type -> balance.v1.BalanceRequest
-	1, // 1: balance.v1.BalanceService.GetBalance:output_type -> balance.v1.BalanceResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 1: balance.v1.BalanceService.Deposit:input_type -> balance.v1.DepositRequest
+	3, // 2: balance.v1.BalanceService.Withdraw:input_type -> balance.v1.WithdrawRequest
+	5, // 3: balance.v1.BalanceService.Transfer:input_type -> balance.v1.TransferRequest
+	1, // 4: balance.v1.BalanceService.GetBalance:output_type -> balance.v1.BalanceResponse
+	1, // 5: balance.v1.BalanceService.Deposit:output_type -> balance.v1.BalanceResponse
+	1, // 6: balance.v1.BalanceService.Withdraw:output_type -> balance.v1.BalanceResponse
+	4, // 7: balance.v1.BalanceService.Transfer:output_type -> balance.v1.TransferResponse
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -161,7 +405,7 @@ func file_api_balance_v1_balance_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_balance_v1_balance_proto_rawDesc), len(file_api_balance_v1_balance_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -69,3 +69,40 @@ func (h *Handler) GetBalance(ctx context.Context, req *balancev1.BalanceRequest)
 	}, nil
 
 }
+
+func (h *Handler) Deposit(ctx context.Context, req *balancev1.DepositRequest) (*balancev1.BalanceResponse, error) {
+	balance, err := h.svc.Deposit(ctx, req.GetUserId(), req.GetAmount())
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
+	return &balancev1.BalanceResponse{
+		Balance: balance,
+	}, nil
+
+}
+
+func (h *Handler) Withdraw(ctx context.Context, req *balancev1.WithdrawRequest) (*balancev1.BalanceResponse, error) {
+	balance, err := h.svc.Withdraw(ctx, req.GetUserId(), req.GetAmount())
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
+	return &balancev1.BalanceResponse{
+		Balance: balance,
+	}, nil
+
+}
+
+func (h *Handler) Transfer(ctx context.Context, req *balancev1.TransferRequest) (*balancev1.TransferResponse, error) {
+	balanceFrom, balanceTo, err := h.svc.Transfer(ctx, req.GetUserFromId(), req.GetUserToId(), req.GetAmount())
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
+	return &balancev1.TransferResponse{
+		BalanceUserFrom: balanceFrom,
+		BalanceUserTo:   balanceTo,
+	}, nil
+
+}

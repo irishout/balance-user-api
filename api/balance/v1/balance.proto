@@ -10,7 +10,27 @@ message BalanceRequest {
 message BalanceResponse {
   int64 balance = 1;
 }
+message DepositRequest {
+  int64 user_id = 1;
+  int64 amount = 2;
+}
+message WithdrawRequest {
+  int64 user_id = 1;
+  int64 amount = 2;
+}
+message TransferResponse {
+  int64 balance_user_from = 1;
+  int64 balance_user_to = 2;
+}
+message TransferRequest {
+  int64 user_from_id = 1;
+  int64 user_to_id = 2;
+  int64 amount = 3;
+}
 
 service BalanceService {
   rpc GetBalance(BalanceRequest) returns (BalanceResponse);
+  rpc Deposit(DepositRequest) returns (BalanceResponse);
+  rpc Withdraw(WithdrawRequest) returns (BalanceResponse);
+  rpc Transfer(TransferRequest) returns (TransferResponse);
 }
