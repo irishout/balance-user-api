@@ -2,7 +2,7 @@
 
 Сервис управления балансами пользователей: начисление, списание, перевод и получение баланса. Валюта хранения — рубль, единицы измерения — копейки (`int64`). Поддерживаются PostgreSQL и хранилище в памяти.
 
-Реализованы HTTP JSON API, Docker Compose, логирование запросов, graceful shutdown, unit- и интеграционные тесты. gRPC находится на стадии контракта и генерации Go-кода; RPC-сервер не реализован.
+Реализованы HTTP JSON API и gRPC для четырёх операций, Docker Compose, логирование HTTP-запросов, graceful shutdown, unit- и интеграционные тесты. Транспорт выбирается через `TRANSPORT=http|grpc`: один сервер на процесс, общий сервисный слой и хранилище.
 
 [Условие задания](docs/task.md) · [Оригинал задания Авито](https://github.com/avito-tech/job-backend-trainee-assignment) · [Архитектура](docs/architecture.md)
 
@@ -21,9 +21,12 @@
   - [Баланс](#баланс)
   - [Ошибки](#ошибки)
 - [gRPC](#grpc)
+  - [Вызовы через grpcurl](#вызовы-через-grpcurl)
+  - [Ошибки RPC](#ошибки-rpc)
   - [Генерация кода](#генерация-кода)
 - [Тестирование](#тестирование)
   - [Service и HTTP](#service-и-http)
+  - [gRPC-обработчики](#grpc-обработчики)
   - [PostgreSQL](#postgresql)
   - [Общие проверки](#общие-проверки)
 - [Вопросы по ТЗ и решения](#вопросы-по-тз-и-решения)
@@ -35,7 +38,7 @@
 - Go 1.26.3 или новее, стандартная библиотека `net/http`.
 - PostgreSQL 18, [pgx v5](https://github.com/jackc/pgx), пул соединений `pgxpool`.
 - Docker и Docker Compose.
-- Protocol Buffers для контракта gRPC.
+- gRPC и Protocol Buffers.
 
 ## Запуск
 
@@ -50,7 +53,7 @@ docker compose up --build
 
 | Сервис | Назначение | Адрес с хостовой машины |
 |---|---|---|
-| `app` | HTTP API | `localhost:8080` |
+| `app` | HTTP API или gRPC, в зависимости от `TRANSPORT` | `localhost:8080` |
 | `db` | PostgreSQL | `localhost:5433` |
 
 Приложение запускается после успешного healthcheck базы. Схема [migrations/001_init.sql](migrations/001_init.sql) применяется при инициализации пустого каталога данных PostgreSQL. Данные хранятся в именованном томе `pgdata`.
@@ -60,13 +63,19 @@ docker compose up --build
 | `docker compose down` | Удаление контейнеров с сохранением данных |
 | `docker compose down -v` | Удаление контейнеров и тома с данными |
 
-Проверка доступности:
+По умолчанию в `.env.example` задан `TRANSPORT=http`. Проверка HTTP-сервера:
 
 ```bash
 curl localhost:8080/ping
 ```
 
-Ответ — `pong`.
+Ответ — `pong`. Для запуска gRPC вместо HTTP:
+
+```bash
+TRANSPORT=grpc docker compose up --build
+```
+
+Оба транспорта используют порт 8080. В режиме gRPC HTTP-маршруты, включая `/ping`, недоступны; примеры вызовов — в разделе [gRPC](#grpc).
 
 ### Локальный запуск
 
@@ -83,10 +92,10 @@ go run ./cmd/app
 Запуск с хранилищем в памяти:
 
 ```bash
-STORAGE=memory go run ./cmd/app
+STORAGE=memory TRANSPORT=http go run ./cmd/app
 ```
 
-В режиме `memory` данные пропадают при завершении процесса. Неизвестное или отсутствующее значение `STORAGE`, некорректная конфигурация и недоступность PostgreSQL при `STORAGE=postgres` приводят к завершению приложения с ошибкой. Автоматического переключения между хранилищами нет.
+Для локального gRPC-сервера задаётся `TRANSPORT=grpc`. В режиме `memory` данные пропадают при завершении процесса. Неизвестное или отсутствующее значение `STORAGE`, некорректная конфигурация и недоступность PostgreSQL при `STORAGE=postgres` приводят к завершению приложения с ошибкой. Автоматического переключения между хранилищами нет.
 
 ### Конфигурация
 
@@ -94,10 +103,10 @@ STORAGE=memory go run ./cmd/app
 |---|---|---|
 | `STORAGE` | Хранилище, обязательная настройка | `postgres` или `memory` |
 | `DATABASE_URL` | Подключение приложения к PostgreSQL | Обязательна при `STORAGE=postgres` |
-| `PORT` | Порт HTTP-сервера | По умолчанию `8080` |
+| `PORT` | Порт выбранного сервера, HTTP или gRPC | По умолчанию `8080` |
 | `TEST_DATABASE_URL` | Подключение интеграционных тестов | Отдельная база `balance_test` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Инициализация PostgreSQL и строка подключения в Compose | Пример — `balance` |
-| `TRANSPORT` | Зарезервирована для выбора HTTP или gRPC | Пример — `http`; текущий `main` настройку не использует |
+| `TRANSPORT` | Транспорт, обязательная настройка | `http` или `grpc`; отсутствующее или неизвестное значение завершает приложение с ошибкой |
 
 Шаблон конфигурации — [.env.example](.env.example). Локальный `.env` исключён из Git. Go не читает этот файл автоматически.
 
@@ -105,13 +114,18 @@ STORAGE=memory go run ./cmd/app
 
 ### Логирование и остановка
 
-Middleware записывает HTTP-метод, путь и длительность обработки каждого запроса:
+В HTTP-режиме middleware записывает HTTP-метод, путь и длительность обработки каждого запроса:
 
 ```bash
 docker compose logs -f app
 ```
 
-При `SIGINT` или `SIGTERM` приложение прекращает принимать новые соединения и ожидает завершения активных HTTP-запросов до 10 секунд. При ошибке `Shutdown` выполняется принудительное закрытие соединений. При выходе из `main` закрывается пул PostgreSQL.
+При `SIGINT` или `SIGTERM` приложение начинает корректную остановку выбранного сервера:
+
+- HTTP: `Shutdown` ожидает активные обработчики до 10 секунд; при ошибке вызывается `Close`.
+- gRPC: `GracefulStop` ожидает активные RPC; через 10 секунд ожидания вызывается принудительный `Stop`.
+
+При штатном выходе из `main` закрывается пул PostgreSQL. Лимит 10 секунд относится к ожиданию сервера. Логирование отдельных gRPC-запросов через interceptor не реализовано.
 
 Остановка приложения с сохранением работающей базы:
 
@@ -209,15 +223,77 @@ curl -X POST localhost:8080/debiting -d '{"user_id": 1, "amount": 1000000}'
 
 ## gRPC
 
-Контракт [api/balance/v1/balance.proto](api/balance/v1/balance.proto) содержит один unary RPC:
+Контракт [api/balance/v1/balance.proto](api/balance/v1/balance.proto) определяет четыре unary RPC сервиса `balance.v1.BalanceService`. Все суммы и балансы — `int64` в копейках.
 
 | RPC | Запрос | Успешный ответ |
 |---|---|---|
-| `/balance.v1.BalanceService/GetBalance` | `BalanceRequest`: `int64 user_id` | `BalanceResponse`: `int64 balance`, в копейках |
+| `GetBalance` | `BalanceRequest`: `user_id` | `BalanceResponse`: `balance` |
+| `Deposit` | `DepositRequest`: `user_id`, `amount` | `BalanceResponse`: `balance` |
+| `Withdraw` | `WithdrawRequest`: `user_id`, `amount` | `BalanceResponse`: `balance` |
+| `Transfer` | `TransferRequest`: `user_from_id`, `user_to_id`, `amount` | `TransferResponse`: `balance_user_from`, `balance_user_to` |
 
-Go-типы сообщений, клиент и серверный интерфейс находятся в [gen/go/balance/v1](gen/go/balance/v1). Обработчики и сетевой сервер отсутствуют; вызов RPC в текущей версии недоступен.
+Обработчики находятся в [internal/transport/grpcapi](internal/transport/grpcapi), сгенерированные сообщения и клиент — в [gen/go/balance/v1](gen/go/balance/v1). Оба транспорта используют один `service.Service` и одинаковые правила операций.
 
-Проектируемая конфигурация — один сервер на процесс, выбранный через `TRANSPORT=http|grpc`. Переменная передаётся в контейнер, но переключение транспорта в `main` не реализовано.
+### Вызовы через grpcurl
+
+Сервер работает без TLS и server reflection. Для вызовов требуется локальный `.proto` и флаг `-plaintext`. Установка клиента на macOS:
+
+```bash
+brew install grpcurl
+```
+
+Следующие команды выполняются из корня проекта при `TRANSPORT=grpc` на пустом хранилище. Создание двух пользователей:
+
+```bash
+grpcurl -plaintext -import-path . -proto api/balance/v1/balance.proto \
+  -d '{"user_id": 1, "amount": 100000}' localhost:8080 balance.v1.BalanceService/Deposit
+
+grpcurl -plaintext -import-path . -proto api/balance/v1/balance.proto \
+  -d '{"user_id": 2, "amount": 50000}' localhost:8080 balance.v1.BalanceService/Deposit
+```
+
+Списание и перевод:
+
+```bash
+grpcurl -plaintext -import-path . -proto api/balance/v1/balance.proto \
+  -d '{"user_id": 1, "amount": 30000}' localhost:8080 balance.v1.BalanceService/Withdraw
+
+grpcurl -plaintext -import-path . -proto api/balance/v1/balance.proto \
+  -d '{"user_from_id": 1, "user_to_id": 2, "amount": 20000}' localhost:8080 balance.v1.BalanceService/Transfer
+```
+
+Ответ перевода в представлении ProtoJSON:
+
+```json
+{"balanceUserFrom":"50000","balanceUserTo":"70000"}
+```
+
+Получение баланса:
+
+```bash
+grpcurl -plaintext -import-path . -proto api/balance/v1/balance.proto \
+  -d '{"user_id": 1}' localhost:8080 balance.v1.BalanceService/GetBalance
+```
+
+```json
+{"balance":"50000"}
+```
+
+`grpcurl` принимает и выводит JSON, а по сети сообщения передаются в формате Protobuf. В ProtoJSON значения `int64` выводятся строками, имена полей — в camelCase; входные имена из `.proto`, например `user_from_id`, также поддерживаются.
+
+### Ошибки RPC
+
+| Причина | Статус gRPC |
+|---|---|
+| Неположительный ID или сумма, перевод самому себе | `InvalidArgument` |
+| Пользователь, отправитель или получатель не найден | `NotFound` |
+| Недостаточно средств | `FailedPrecondition` |
+| Переполнение баланса | `OutOfRange` |
+| Отмена контекста операции | `Canceled` |
+| Истечение дедлайна операции | `DeadlineExceeded` |
+| Неизвестная ошибка | `Internal` |
+
+Неуспешный RPC возвращает статус с сообщением; успешное сообщение ответа отсутствует. Контекст входящего RPC передаётся через service в storage и pgx.
 
 ### Генерация кода
 
@@ -250,7 +326,7 @@ protoc \
 
 Контракт и оба сгенерированных файла хранятся в Git. Изменение `.proto` сопровождается повторной генерацией. Ручное редактирование `.pb.go` не предусмотрено. Dockerfile собирает готовые Go-исходники без запуска генераторов.
 
-Установка инструментов через `go install` не изменяет зависимости приложения. Сгенерированный пакет требует библиотеки `google.golang.org/protobuf` и `google.golang.org/grpc`. После первой генерации зависимости синхронизируются и сохраняются в `go.mod` и `go.sum`:
+Установка инструментов через `go install` не изменяет зависимости приложения. Сгенерированный пакет требует библиотеки `google.golang.org/protobuf` и `google.golang.org/grpc`. При изменении импортов после генерации зависимости синхронизируются и сохраняются в `go.mod` и `go.sum`:
 
 ```bash
 go mod tidy
@@ -270,6 +346,16 @@ go test -race ./internal/service ./internal/transport
 go test -v ./internal/service
 go test -run '^TestBalance' -v ./internal/transport
 ```
+
+### gRPC-обработчики
+
+Тесты напрямую вызывают методы gRPC-handler с Protobuf-сообщениями, настоящим service и `MapStorage`. Сетевой сервер и PostgreSQL не требуются.
+
+```bash
+go test -race -count=1 -v ./internal/transport/grpcapi
+```
+
+Проверяются четыре операции, нулевой баланс, создание и повторное начисление, списание всего остатка, статусы отказов и сохранение балансов при неуспешных изменениях. Для `toGRPCError` проверяются базовые случаи: отсутствие ошибки, неверный ID, отсутствующий пользователь и неизвестная ошибка. Эти тесты не проверяют сетевой обмен или все ветви преобразования ошибок.
 
 ### PostgreSQL
 
@@ -328,7 +414,7 @@ go test -race -count=1 -timeout=30s ./...
 |---|---|
 | Объединять ли начисление и списание? | Отдельные методы с положительной суммой и собственными наборами ошибок. |
 | Как хранить рублёвый баланс? | Целое число копеек в `int64` / `BIGINT`. Дробные суммы в запросах отклоняются; вычисления не используют `float`. |
-| Когда создаётся пользователь? | При первом начислении. Остальные операции для отсутствующего пользователя возвращают 404; перевод получателя не создаёт. |
+| Когда создаётся пользователь? | При первом начислении. Остальные операции для отсутствующего пользователя возвращают HTTP 404 / gRPC `NotFound`; перевод получателя не создаёт. |
 | Как отвечать при нехватке средств? | HTTP 409: операция конфликтует с текущим состоянием баланса. Ошибки входных данных — HTTP 400. |
 | Как обрабатывать переполнение баланса? | HTTP 409 `balance overflow`; изменение баланса не применяется. |
 | Допустим ли перевод самому себе? | Нет, HTTP 400. |
@@ -344,6 +430,7 @@ cmd/app/                точка входа, конфигурация, зап�
 api/balance/v1/         контракт Protobuf
 gen/go/balance/v1/      сгенерированные сообщения, клиент и серверный интерфейс
 internal/transport/     HTTP-обработчики, роутер и middleware
+  grpcapi/              gRPC-обработчики и преобразование статусов
 internal/service/       валидация операций и интерфейс Storage
 internal/storage/
   postgresdb/           PostgreSQL
@@ -358,7 +445,6 @@ docker-compose.yml      окружение app + db
 
 ## План развития
 
-- gRPC-сервер для четырёх операций с выбором транспорта через `TRANSPORT`.
 - История операций с комментариями, пагинацией и сортировкой.
 - Конвертация валют через внешний API и Redis для кеширования курсов.
 - События операций через Kafka, transactional outbox и отдельный consumer.

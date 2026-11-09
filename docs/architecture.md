@@ -1,6 +1,6 @@
 # Архитектура balance-user-api
 
-Сервис разделён на транспортный, сервисный и слой хранения данных. Рабочий транспорт — HTTP JSON. gRPC представлен контрактом первого метода и сгенерированным Go-кодом; обработчики и сетевой сервер находятся в разработке.
+Сервис разделён на транспортный, сервисный и слой хранения данных. Четыре операции доступны через HTTP JSON или gRPC. Переменная `TRANSPORT` выбирает один сервер на процесс; service и storage общие для обоих транспортов.
 
 Инструкции по запуску, примеры запросов и команды проверки приведены в [README](../README.md).
 
@@ -17,8 +17,9 @@
 - [HTTP API](#http-api)
   - [Ошибки операций](#ошибки-операций)
 - [gRPC](#grpc)
-  - [Текущая реализация](#текущая-реализация)
-  - [Целевая организация транспорта](#целевая-организация-транспорта)
+  - [Контракт и обработчики](#контракт-и-обработчики)
+  - [Статусы ошибок](#статусы-ошибок)
+  - [Выбор транспорта](#выбор-транспорта)
 - [Конфигурация](#конфигурация)
 - [Жизненный цикл сервера](#жизненный-цикл-сервера)
   - [Запуск и обработка запросов](#запуск-и-обработка-запросов)
@@ -30,21 +31,24 @@
 ## Слои и зависимости
 
 ```text
-HTTP-клиент
-  → http.Server
-  → LoggingMiddleware
-  → http.ServeMux
-  → transport.Handler
-  → service.Service
-  → service.Storage
-      ├→ local.MapStorage
-      └→ postgresdb.PostgresStorage → pgxpool → PostgreSQL
+Выбранный транспорт:
+  HTTP → http.Server → LoggingMiddleware → ServeMux → transport.Handler
+  gRPC → grpc.Server → grpcapi.Handler
+                            ↓
+                     service.Service
+                            ↓
+                     service.Storage
+                       ├→ local.MapStorage
+                       └→ postgresdb.PostgresStorage → pgxpool → PostgreSQL
 ```
+
+В процессе активна одна из двух транспортных ветвей.
 
 | Компонент | Ответственность |
 |---|---|
 | `cmd/app` | Чтение конфигурации, создание зависимостей, запуск и остановка сервера |
 | `internal/transport` | HTTP-маршрутизация, декодирование запросов, формирование ответов и кодов ошибок |
+| `internal/transport/grpcapi` | Реализация RPC, формирование Protobuf-ответов и статусов gRPC |
 | `internal/service` | Проверка входных параметров операций, вызов интерфейса `Storage` |
 | `internal/storage/local` | Хранение балансов в памяти, атомарность через мьютекс |
 | `internal/storage/postgresdb` | SQL-операции, транзакции и преобразование ошибок PostgreSQL |
@@ -72,6 +76,9 @@ internal/
     handler_test.go
     router.go
     middleware.go
+    grpcapi/
+      handler.go
+      handler_test.go
   storage/
     local/map_storage.go
     postgresdb/
@@ -185,14 +192,16 @@ type Storage interface {
 
 ## gRPC
 
-### Текущая реализация
+### Контракт и обработчики
 
-[balance.proto](../api/balance/v1/balance.proto) содержит unary RPC `/balance.v1.BalanceService/GetBalance`:
+[balance.proto](../api/balance/v1/balance.proto) определяет четыре unary RPC сервиса `balance.v1.BalanceService`. Числовые поля сообщений имеют тип `int64`.
 
-| Сообщение | Поле | Тип |
+| RPC | Сообщение запроса и поля | Сообщение ответа и поля |
 |---|---|---|
-| `BalanceRequest` | `user_id` | `int64` |
-| `BalanceResponse` | `balance`, в копейках | `int64` |
+| `GetBalance` | `BalanceRequest`: `user_id` | `BalanceResponse`: `balance` |
+| `Deposit` | `DepositRequest`: `user_id`, `amount` | `BalanceResponse`: `balance` |
+| `Withdraw` | `WithdrawRequest`: `user_id`, `amount` | `BalanceResponse`: `balance` |
+| `Transfer` | `TransferRequest`: `user_from_id`, `user_to_id`, `amount` | `TransferResponse`: `balance_user_from`, `balance_user_to` |
 
 Пространство имён Protobuf — `balance.v1`. Путь импорта Go — `github.com/irishout/balance-user-api/gen/go/balance/v1`; имя сгенерированного Go-пакета — `v1`.
 
@@ -201,23 +210,37 @@ type Storage interface {
 | `balance.pb.go` | Типы сообщений и поддержка Protobuf |
 | `balance_grpc.pb.go` | `BalanceServiceClient`, `BalanceServiceServer`, `UnimplementedBalanceServiceServer`, функция регистрации `RegisterBalanceServiceServer` |
 
-Собственный обработчик и сетевой сервер отсутствуют. Библиотеки gRPC и Protobuf требуются для сборки сгенерированного пакета. Команды установки инструментов, генерации и синхронизации зависимостей находятся в [README](../README.md#генерация-кода).
+`grpcapi.Handler` содержит `*service.Service` и встраивает `UnimplementedBalanceServiceServer` по значению. Методы читают поля запроса через сгенерированные getters, передают параметры и входящий контекст в service. При успехе возвращается Protobuf-сообщение, при ошибке — `nil` и результат `toGRPCError`.
 
-Контракт и результат генерации версионируются в Git. Изменения контрактов сопровождаются повторной генерацией; ручные изменения сгенерированных файлов не предусмотрены. Текущий Dockerfile использует готовые Go-исходники.
+Контракт и результат генерации версионируются в Git. Изменения контрактов сопровождаются повторной генерацией; ручные изменения сгенерированных файлов не предусмотрены. Dockerfile использует готовые Go-исходники. Команды генерации находятся в [README](../README.md#генерация-кода).
 
-### Целевая организация транспорта
+### Статусы ошибок
 
-Выбор `TRANSPORT=http|grpc` предусматривает запуск одного сервера на процесс:
+`toGRPCError` проверяет ошибки через `errors.Is`. Ошибки service и storage не зависят от транспорта.
 
-```text
-TRANSPORT=http → HTTP-сервер → HTTP-handler ─┐
-                                           ├→ service.Service → Storage
-TRANSPORT=grpc → gRPC-сервер → gRPC-handler ─┘
-```
+| Ошибка | Статус gRPC | Сообщение |
+|---|---|---|
+| `ErrInvalidUserID` | `InvalidArgument` | `user_id must be greater than 0` |
+| `ErrInvalidSenderID` | `InvalidArgument` | `user_from_id must be greater than 0` |
+| `ErrInvalidRecipientID` | `InvalidArgument` | `user_to_id must be greater than 0` |
+| `ErrInvalidAmount` | `InvalidArgument` | `amount must be greater than 0` |
+| `ErrSelfTransfer` | `InvalidArgument` | `user_to_id and user_from_id must be different` |
+| `ErrNotFound` | `NotFound` | `user_id not found` |
+| `ErrSenderNotFound` | `NotFound` | `user_from_id not found` |
+| `ErrRecipientNotFound` | `NotFound` | `user_to_id not found` |
+| `ErrInsufficientFunds` | `FailedPrecondition` | `insufficient funds` |
+| `ErrBalanceOverflow` | `OutOfRange` | `balance overflow` |
+| `context.Canceled` | `Canceled` | `request canceled` |
+| `context.DeadlineExceeded` | `DeadlineExceeded` | `request deadline exceeded` |
+| Неизвестная ошибка | `Internal` | `internal error` |
 
-Service и storage создаются до выбора транспорта. Планируемый пакет `internal/transport/grpcapi` реализует серверный интерфейс из сгенерированного кода, вызывает существующий service и преобразует ошибки в статусы gRPC. Запуск и завершение сервера зависят от выбранного транспорта.
+При отсутствии ошибки `toGRPCError` возвращает `nil`. HTTP-handler не выделяет отмену и дедлайн в отдельные статусы: они попадают в общую ветвь HTTP 500.
 
-В текущей реализации `main` не читает `TRANSPORT` и всегда запускает HTTP-сервер. Передача `TRANSPORT=grpc` в окружение не включает gRPC.
+### Выбор транспорта
+
+Service и storage создаются до выбора `TRANSPORT=http|grpc`. В зависимости от значения `main` создаёт HTTP- или gRPC-handler и запускает соответствующий сервер на `PORT` (по умолчанию 8080). Отсутствующее или неизвестное значение `TRANSPORT` завершает приложение с ошибкой.
+
+gRPC-сервер работает без TLS и server reflection. Клиент `grpcurl` использует локальный `.proto`; JSON в его вводе и выводе — представление Protobuf-сообщений. На сетевом уровне используется Protobuf. HTTP-маршруты, в том числе `/ping`, доступны только при `TRANSPORT=http`.
 
 ## Конфигурация
 
@@ -225,9 +248,9 @@ Service и storage создаются до выбора транспорта. П
 |---|---|
 | `STORAGE` | Обязательный выбор `postgres` или `memory`; неизвестное значение завершает приложение с ошибкой |
 | `DATABASE_URL` | Обязательна при `STORAGE=postgres` |
-| `PORT` | HTTP-порт, по умолчанию 8080 |
+| `PORT` | Порт выбранного HTTP- или gRPC-сервера, по умолчанию 8080 |
 | `TEST_DATABASE_URL` | Подключение интеграционных тестов к базе `balance_test` |
-| `TRANSPORT` | Зарезервирована для выбора сервера; в текущем `main` не используется |
+| `TRANSPORT` | Обязательный выбор `http` или `grpc`; неизвестное значение завершает приложение с ошибкой |
 
 Конфигурация читается из окружения процесса. Локальный `.env` загружается оболочкой; Compose использует его для подстановок. При запуске в режиме PostgreSQL `main` создаёт пул и проверяет соединение через `Ping`. Ошибка подключения завершает приложение; перехода на другое хранилище нет.
 
@@ -235,29 +258,36 @@ Service и storage создаются до выбора транспорта. П
 
 ### Запуск и обработка запросов
 
-`main` создаёт `http.Server` с адресом `":" + port` и роутером, обёрнутым в `LoggingMiddleware`. `ListenAndServe` выполняется в отдельной горутине. Подписка `signal.NotifyContext` обрабатывает `SIGINT` и `SIGTERM`.
+`main` подписывается на `SIGINT` и `SIGTERM` через `signal.NotifyContext`. Выбранный сервер запускается в отдельной горутине, а `main` ожидает закрытия `stopCtx.Done()`.
 
-Middleware записывает метод, путь и длительность после возврата из следующего обработчика. Логируются также обращения, для которых роутер возвращает 404 или 405. HTTP-код ответа в лог не включён.
+| Транспорт | Запуск |
+|---|---|
+| HTTP | `http.Server` с адресом `":" + port`, роутер обёрнут в `LoggingMiddleware`, вызов `ListenAndServe` |
+| gRPC | `grpc.NewServer`, регистрация handler через `RegisterBalanceServiceServer`, `net.Listen("tcp", ":" + port)`, вызов `Serve` |
+
+HTTP-middleware записывает метод, путь и длительность после возврата из следующего обработчика. Логируются также обращения, для которых роутер возвращает 404 или 405. HTTP-код ответа в лог не включён. Для gRPC interceptor логирования не реализован.
 
 ### Graceful shutdown
 
-После получения сигнала выполняется последовательность:
+После получения сигнала создаётся отдельный `shutdownCtx` от `context.Background()` с таймаутом 10 секунд.
 
-1. Создание отдельного `shutdownCtx` от `context.Background()` с таймаутом 10 секунд.
-2. Вызов `server.Shutdown`: закрытие слушающего сокета и простаивающих соединений, ожидание завершения активных HTTP-обработчиков.
-3. При ошибке `Shutdown` — запись ошибки в лог и принудительное закрытие через `server.Close()`.
-4. Выход из `main` и закрытие пула PostgreSQL через `defer pool.Close()`.
+| Транспорт | Корректное завершение | Принудительное завершение |
+|---|---|---|
+| HTTP | `Shutdown` закрывает слушающий сокет и простаивающие соединения, ожидает активные обработчики | При ошибке `Shutdown` вызывается `Close` |
+| gRPC | `GracefulStop` в отдельной горутине прекращает приём новых RPC и ожидает активные; после возврата закрывается канал `stopped` | Если дедлайн наступает раньше закрытия `stopped`, вызывается `Stop` |
 
-`http.ErrServerClosed` при штатной остановке исключена из аварийного завершения. Остальные ошибки `ListenAndServe` приводят к `log.Fatal`. Лимит 10 секунд относится к ожиданию HTTP-обработчиков, а не ко всему времени завершения процесса.
+`http.ErrServerClosed` и `grpc.ErrServerStopped` исключены из аварийного завершения. Ошибки открытия gRPC-слушателя и остальные ошибки запуска серверов приводят к `log.Fatal`.
+
+При штатном возврате из `main` пул PostgreSQL закрывается через `defer pool.Close()`. Лимит 10 секунд относится к ожиданию выбранного сервера, а не ко всему времени завершения процесса.
 
 ### Контексты
 
 | Контекст | Назначение |
 |---|---|
 | Стартовый `context.Background()` | Создание пула и проверка PostgreSQL |
-| `r.Context()` | Передаётся из HTTP-handler через service и storage в pgx |
+| Контекст запроса: `r.Context()` в HTTP или `ctx` RPC-метода | Передаётся через service и storage в pgx; несёт отмену и дедлайн клиента |
 | `stopCtx` | Получение сигнала остановки в `main` |
-| `shutdownCtx` | Ограниченное ожидание завершения HTTP-запросов после сигнала |
+| `shutdownCtx` | Ограниченное ожидание завершения HTTP-запросов или RPC после сигнала |
 
 Контекст передаётся первым параметром методов. Контекст запроса и контекст остановки разделены, чтобы получение системного сигнала не отменяло активные запросы до истечения периода ожидания.
 
@@ -269,11 +299,11 @@ Compose запускает два сервиса:
 
 | Сервис | Настройки |
 |---|---|
-| `app` | Сборка из Dockerfile, порт 8080, `STORAGE=postgres`, подключение к `db:5432` |
+| `app` | Сборка из Dockerfile, порт 8080, `STORAGE=postgres`, `TRANSPORT` из окружения Compose, подключение к `db:5432` |
 | `db` | `postgres:18`, проброс `5433:5432`, healthcheck через `pg_isready`, том `pgdata` |
 
 ```text
-HTTP-клиент на хосте → localhost:8080 → app:8080
+HTTP- или gRPC-клиент → localhost:8080 → app:8080
                                          │
                                          └→ db:5432 → pgdata
 psql на хосте       → localhost:5433 ──────→ db:5432
@@ -287,9 +317,12 @@ psql на хосте       → localhost:5433 ──────→ db:5432
 |---|---|---|
 | Service | Мок `Storage` | Валидация параметров, передача аргументов, результатов и ошибок |
 | HTTP | Service и `MapStorage`, `httptest` | Успешные ответы четырёх операций, выбранные ошибки, HTTP-коды и JSON |
+| gRPC | Service и `MapStorage`, Protobuf-сообщения | Четыре операции, статусы ошибок, возвращаемые и сохранённые балансы |
 | PostgreSQL | Отдельная база `balance_test` | Откат перевода, параллельные списания, встречные переводы |
 
 Тесты service используют таблицы сценариев и `t.Run`. HTTP-тесты баланса проходят через роутер для заполнения `r.PathValue`; остальные вызывают метод handler напрямую.
+
+gRPC-тесты вызывают handler напрямую, без сетевого сервера. Они проверяют нулевой баланс, новое и повторное начисление, частичное и полное списание, успешный перевод и отказы без изменения состояния. Для `toGRPCError` проверяются четыре базовых случая: `nil`, неверный ID, отсутствующий пользователь и неизвестная ошибка; полного перебора ветвей нет.
 
 Интеграционные тесты проверяют имя базы перед очисткой таблицы через `TRUNCATE`. Тесты выполняются последовательно; параллельность организована внутри отдельных сценариев через горутины и `sync.WaitGroup`. Результат каждой операции записывается в отдельный элемент среза и проверяется после завершения всех горутин.
 
