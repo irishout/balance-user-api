@@ -97,6 +97,8 @@ func errorHandler(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "insufficient funds")
 	case errors.Is(err, domain.ErrInvalidOperationSort):
 		writeError(w, http.StatusBadRequest, "sort must be date or amount")
+	case errors.Is(err, errors.ErrUnsupported):
+		writeError(w, http.StatusNotImplemented, "operation history requires PostgreSQL")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}
