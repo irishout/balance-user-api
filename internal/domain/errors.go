@@ -14,5 +14,6 @@ var (
 	ErrInvalidRecipientID   = errors.New("recipient id must be positive")
 	ErrInvalidAmount        = errors.New("amount must be positive")
 	ErrInvalidOperationSort = errors.New("operation sort must be date or amount")
+	ErrInvalidPagination    = errors.New("limit and offset must be non-negative")
 	ErrSelfTransfer         = errors.New("user ids must be different")
 )

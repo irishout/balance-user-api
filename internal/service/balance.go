@@ -11,6 +11,7 @@ type Storage interface {
 	Deposit(ctx context.Context, userID, amount int64) (int64, error)
 	Withdraw(ctx context.Context, userID, amount int64) (int64, error)
 	Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error)
+	ListOperations(ctx context.Context, userID int64, limit, offset int, sortBy string) ([]domain.Operation, error)
 }
 
 type Service struct {
@@ -73,4 +74,26 @@ func (s *Service) Balance(ctx context.Context, userID int64) (int64, error) {
 	}
 
 	return s.storage.Balance(ctx, userID)
+}
+
+func (s *Service) ListOperations(ctx context.Context, userID int64, limit, offset int, sortBy string) ([]domain.Operation, error) {
+	if userID <= 0 {
+		return nil, domain.ErrInvalidUserID
+	}
+	if limit < 0 || offset < 0 {
+		return nil, domain.ErrInvalidPagination
+	}
+	if limit == 0 {
+		limit = 20
+	}
+
+	switch sortBy {
+	case "":
+		sortBy = "date"
+	case "date", "amount":
+	default:
+		return nil, domain.ErrInvalidOperationSort
+	}
+
+	return s.storage.ListOperations(ctx, userID, limit, offset, sortBy)
 }

@@ -21,6 +21,7 @@ type storageMock struct {
 	receivedToID   int64
 	transferErr    error
 	transferCalls  int
+	listOperations func(ctx context.Context, userID int64, limit, offset int, sortBy string) ([]domain.Operation, error)
 }
 
 func (s *storageMock) Deposit(ctx context.Context, userID, amount int64) (int64, error) {
@@ -45,6 +46,51 @@ func (s *storageMock) Balance(ctx context.Context, userID int64) (int64, error) 
 	s.balanceCalls++
 	s.receivedUserID = userID
 	return s.balanceResult, s.balanceErr
+}
+
+func (s *storageMock) ListOperations(ctx context.Context, userID int64, limit, offset int, sortBy string) ([]domain.Operation, error) {
+	return s.listOperations(ctx, userID, limit, offset, sortBy)
+}
+
+func TestListOperationsDefaults(t *testing.T) {
+	storage := &storageMock{
+		listOperations: func(_ context.Context, userID int64, limit, offset int, sortBy string) ([]domain.Operation, error) {
+			if userID != 2 || limit != 20 || offset != 40 || sortBy != "date" {
+				t.Fatalf("storage got userID=%d, limit=%d, offset=%d, sortBy=%q", userID, limit, offset, sortBy)
+			}
+			return []domain.Operation{{ID: 5}}, nil
+		},
+	}
+
+	operations, err := NewService(storage).ListOperations(context.Background(), 2, 0, 40, "")
+	if err != nil || len(operations) != 1 || operations[0].ID != 5 {
+		t.Fatalf("operations = %+v, error = %v; want operation 5", operations, err)
+	}
+}
+
+func TestListOperationsInvalidInput(t *testing.T) {
+	tests := []struct {
+		name   string
+		userID int64
+		limit  int
+		offset int
+		sortBy string
+		want   error
+	}{
+		{name: "invalid user", userID: 0, want: domain.ErrInvalidUserID},
+		{name: "negative limit", userID: 1, limit: -1, want: domain.ErrInvalidPagination},
+		{name: "negative offset", userID: 1, offset: -1, want: domain.ErrInvalidPagination},
+		{name: "invalid sort", userID: 1, sortBy: "balance", want: domain.ErrInvalidOperationSort},
+	}
+	svc := NewService(nil)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := svc.ListOperations(context.Background(), test.userID, test.limit, test.offset, test.sortBy)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+		})
+	}
 }
 
 func TestDepositSuccess(t *testing.T) {
