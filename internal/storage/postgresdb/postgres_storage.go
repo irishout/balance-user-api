@@ -23,6 +23,46 @@ func NewPostgresStorage(pool *pgxpool.Pool) *PostgresStorage {
 	}
 }
 
+func (s *PostgresStorage) ListOperations(ctx context.Context, userID int64, limit, offset int, sortBy string) ([]domain.Operation, error) {
+	var sortColumn string
+	switch sortBy {
+	case "", "date":
+		sortColumn = "operation_date"
+	case "amount":
+		sortColumn = "amount"
+	default:
+		return nil, domain.ErrInvalidOperationSort
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, operation_type, operation_date, user_id, recipient_id, amount,
+		       COALESCE(comment, '') AS comment
+		FROM operations
+		WHERE user_id = $1 OR recipient_id = $1
+		ORDER BY `+sortColumn+` DESC, id DESC
+		LIMIT $2 OFFSET $3;`, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	history := make([]domain.Operation, 0)
+
+	for rows.Next() {
+		var row domain.Operation
+		if err := rows.Scan(&row.ID, &row.Type, &row.Date, &row.UserID, &row.RecipientID, &row.Amount, &row.Comment); err != nil {
+			return nil, err
+		}
+		history = append(history, row)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return history, nil
+}
+
 func (s *PostgresStorage) Balance(ctx context.Context, userID int64) (int64, error) {
 	var balance int64
 	err := s.pool.QueryRow(ctx, "SELECT balance FROM user_balance WHERE user_id = $1", userID).Scan(&balance)
