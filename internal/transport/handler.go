@@ -35,6 +35,14 @@ type responseTransfer struct {
 	BalanceUserTo   int64 `json:"balance_user_to"`
 }
 
+type requestOperations struct {
+	UserID int64
+}
+
+type responseOperations struct {
+	Operations []domain.Operation `json:"operations"`
+}
+
 type Handler struct {
 	svc *service.Service
 }
@@ -87,6 +95,8 @@ func errorHandler(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "user_to_id not found")
 	case errors.Is(err, domain.ErrInsufficientFunds):
 		writeError(w, http.StatusConflict, "insufficient funds")
+	case errors.Is(err, domain.ErrInvalidOperationSort):
+		writeError(w, http.StatusBadRequest, "sort must be date or amount")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal error")
 	}
@@ -163,4 +173,68 @@ func (h *Handler) Balance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, responseWithBalance{Balance: balance})
+}
+
+func (h *Handler) Operations(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userIDStr := r.PathValue("user_id")
+	query := r.URL.Query()
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "user_id must be a number")
+		return
+	}
+
+	req := requestOperations{UserID: userID}
+	var page, pageSize int
+	pageStr := query.Get("page")
+	if pageStr == "" {
+		page = 1
+	} else {
+		page, err = strconv.Atoi(pageStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "page must be a number")
+			return
+		}
+	}
+	if page <= 0 {
+		writeError(w, http.StatusBadRequest, "page must be positive")
+		return
+	}
+
+	pageSizeStr := query.Get("page_size")
+	if pageSizeStr == "" {
+		pageSize = 20
+	} else {
+		pageSize, err = strconv.Atoi(pageSizeStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "page_size must be a number")
+			return
+		}
+	}
+	if pageSize <= 0 {
+		writeError(w, http.StatusBadRequest, "page_size must be positive")
+		return
+	}
+
+	sortType := query.Get("sort")
+
+	operations, err := h.svc.ListOperations(ctx, req.UserID, pageSize, (page-1)*pageSize, sortType)
+	if err != nil {
+		errorHandler(w, err)
+		return
+	}
+	response := responseOperations{Operations: make([]domain.Operation, 0, len(operations))}
+	for _, operation := range operations {
+		response.Operations = append(response.Operations, domain.Operation{
+			ID:          operation.ID,
+			Type:        operation.Type,
+			Date:        operation.Date,
+			UserID:      operation.UserID,
+			RecipientID: operation.RecipientID,
+			Amount:      operation.Amount,
+			Comment:     operation.Comment,
+		})
+	}
+	writeJSON(w, http.StatusOK, response)
 }
