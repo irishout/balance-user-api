@@ -38,7 +38,12 @@ func (s *PostgresStorage) Balance(ctx context.Context, userID int64) (int64, err
 
 func (s *PostgresStorage) Deposit(ctx context.Context, userID, amount int64) (int64, error) {
 	var balance int64
-	err := s.pool.QueryRow(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	err = tx.QueryRow(ctx, `
 								insert into user_balance (user_id, balance) values (
 									$1,
 									$2
@@ -57,12 +62,35 @@ func (s *PostgresStorage) Deposit(ctx context.Context, userID, amount int64) (in
 		}
 		return 0, err
 	}
+
+	_, err = tx.Exec(ctx, `
+								insert into operations (operation_type, user_id, amount)
+								select
+									'deposit',
+									$1,
+									$2`,
+		userID, amount)
+
+	if err != nil {
+		return 0, err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return 0, err
+	}
+
 	return balance, nil
 }
 
 func (s *PostgresStorage) Withdraw(ctx context.Context, userID, amount int64) (int64, error) {
 	var balance int64
-	err := s.pool.QueryRow(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	err = tx.QueryRow(ctx, `
 								update user_balance set 
 									balance = user_balance.balance - $2
 								where user_id = $1
@@ -79,6 +107,24 @@ func (s *PostgresStorage) Withdraw(ctx context.Context, userID, amount int64) (i
 		}
 		return 0, err
 	}
+
+	_, err = tx.Exec(ctx, `
+								insert into operations (operation_type, user_id, amount)
+								select
+									'withdraw',
+									$1,
+									$2`,
+		userID, amount)
+
+	if err != nil {
+		return 0, err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return 0, err
+	}
+
 	return balance, nil
 }
 
@@ -125,6 +171,19 @@ func (s *PostgresStorage) Transfer(ctx context.Context, fromID, toID, amount int
 				return 0, 0, domain.ErrBalanceOverflow
 			}
 		}
+		return 0, 0, err
+	}
+
+	_, err = tx.Exec(ctx, `
+								insert into operations (operation_type, user_id, recipient_id, amount)
+								select
+									'transfer',
+									$1,
+									$2,
+									$3`,
+		fromID, toID, amount)
+
+	if err != nil {
 		return 0, 0, err
 	}
 	err = tx.Commit(ctx)
