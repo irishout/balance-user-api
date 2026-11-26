@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sync"
 
@@ -17,6 +18,11 @@ func NewMapStorage() *MapStorage {
 	return &MapStorage{
 		balances: make(map[int64]int64),
 	}
+}
+
+// ListOperations возвращает errors.ErrUnsupported потому что история доступна только для PostgreSQL.
+func (s *MapStorage) ListOperations(ctx context.Context, userID int64, limit, offset int, sortBy string) ([]domain.Operation, error) {
+	return nil, errors.ErrUnsupported
 }
 
 func (s *MapStorage) Balance(ctx context.Context, userID int64) (int64, error) {
