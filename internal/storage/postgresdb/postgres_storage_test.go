@@ -178,17 +178,20 @@ func TestListOperations(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	storage := newTestPostgresStorage(t, ctx)
+	const depositComment = "Пополнение картой"
+	const withdrawComment = "Оплата заказа O'Reilly"
+	const transferComment = "Возврат долга"
 
 	if _, err := storage.Deposit(ctx, 1, 1000, ""); err != nil {
 		t.Fatalf("deposit for sender: %v", err)
 	}
-	if _, err := storage.Deposit(ctx, 2, 200, ""); err != nil {
+	if _, err := storage.Deposit(ctx, 2, 200, depositComment); err != nil {
 		t.Fatalf("deposit for recipient: %v", err)
 	}
-	if _, _, err := storage.Transfer(ctx, 1, 2, 300, ""); err != nil {
+	if _, _, err := storage.Transfer(ctx, 1, 2, 300, transferComment); err != nil {
 		t.Fatalf("transfer: %v", err)
 	}
-	if _, err := storage.Withdraw(ctx, 2, 300, ""); err != nil {
+	if _, err := storage.Withdraw(ctx, 2, 300, withdrawComment); err != nil {
 		t.Fatalf("withdraw: %v", err)
 	}
 
@@ -199,7 +202,7 @@ func TestListOperations(t *testing.T) {
 		        WHEN 'deposit' THEN TIMESTAMPTZ '2026-01-02 00:00:00+00'
 		        ELSE TIMESTAMPTZ '2026-01-01 00:00:00+00'
 		    END,
-		    comment = CASE WHEN operation_type = 'transfer' THEN NULL ELSE comment END`); err != nil {
+		    comment = CASE WHEN operation_type = 'deposit' AND user_id = 1 THEN NULL ELSE comment END`); err != nil {
 		t.Fatalf("set history fixtures: %v", err)
 	}
 
@@ -213,14 +216,21 @@ func TestListOperations(t *testing.T) {
 	if history[0].Amount != 200 || history[1].Amount != 300 || history[0].RecipientID != nil || history[1].RecipientID != nil {
 		t.Fatalf("unexpected deposit or withdrawal: %+v", history[:2])
 	}
+	if history[0].Comment != depositComment || history[1].Comment != withdrawComment {
+		t.Fatalf("deposit and withdrawal comments = %q, %q; want %q, %q",
+			history[0].Comment, history[1].Comment, depositComment, withdrawComment)
+	}
 	transfer := history[2]
-	if transfer.UserID != 1 || transfer.RecipientID == nil || *transfer.RecipientID != 2 || transfer.Amount != 300 || transfer.Comment != "" {
+	if transfer.UserID != 1 || transfer.RecipientID == nil || *transfer.RecipientID != 2 || transfer.Amount != 300 || transfer.Comment != transferComment {
 		t.Fatalf("unexpected incoming transfer: %+v", transfer)
 	}
 
 	senderHistory, err := storage.ListOperations(ctx, 1, 10, 0, "date")
 	if err != nil || len(senderHistory) != 2 || senderHistory[1].ID != transfer.ID {
 		t.Fatalf("sender history = %+v, error = %v; want the same transfer", senderHistory, err)
+	}
+	if senderHistory[0].Comment != "" || senderHistory[1].Comment != transferComment {
+		t.Fatalf("sender comments = %q, %q; want empty comment and %q", senderHistory[0].Comment, senderHistory[1].Comment, transferComment)
 	}
 
 	page, err := storage.ListOperations(ctx, 2, 1, 1, "amount")
@@ -260,7 +270,6 @@ func TestBalanceChangesRollbackWhenHistoryInsertFails(t *testing.T) {
 		t.Fatalf("seed recipient balance: %v", err)
 	}
 
-	// Reject a valid balance operation specifically at the history insert.
 	if _, err := pool.Exec(ctx, `
 		ALTER TABLE pg_temp.operations ADD CONSTRAINT test_reject_history_amount CHECK (amount <> 300)`); err != nil {
 		t.Fatalf("add test constraint: %v", err)

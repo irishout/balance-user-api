@@ -356,3 +356,59 @@ func TestOperationsMemoryStorageUnsupported(t *testing.T) {
 		t.Errorf("unexpected error message %q", body.Err)
 	}
 }
+
+type commentStorageStub struct {
+	service.Storage
+	operation string
+	comment   string
+}
+
+func (s *commentStorageStub) Deposit(_ context.Context, _, _ int64, comment string) (int64, error) {
+	s.operation, s.comment = "deposit", comment
+	return 100, nil
+}
+
+func (s *commentStorageStub) Withdraw(_ context.Context, _, _ int64, comment string) (int64, error) {
+	s.operation, s.comment = "withdraw", comment
+	return 100, nil
+}
+
+func (s *commentStorageStub) Transfer(_ context.Context, _, _, _ int64, comment string) (int64, int64, error) {
+	s.operation, s.comment = "transfer", comment
+	return 100, 200, nil
+}
+
+func TestHTTPComment(t *testing.T) {
+	tests := []struct {
+		name      string
+		path      string
+		body      string
+		operation string
+		comment   string
+		status    int
+	}{
+		{"deposit with comment", "/accrual", `{"user_id":1,"amount":100,"comment":"Пополнение картой"}`, "deposit", "Пополнение картой", http.StatusOK},
+		{"withdraw with comment", "/debiting", `{"user_id":1,"amount":100,"comment":"Оплата заказа"}`, "withdraw", "Оплата заказа", http.StatusOK},
+		{"transfer with comment", "/transfer", `{"user_from_id":1,"user_to_id":2,"amount":100,"comment":"Возврат долга"}`, "transfer", "Возврат долга", http.StatusOK},
+		{"deposit without comment", "/accrual", `{"user_id":1,"amount":100}`, "deposit", "", http.StatusOK},
+		{"withdraw without comment", "/debiting", `{"user_id":1,"amount":100}`, "withdraw", "", http.StatusOK},
+		{"transfer without comment", "/transfer", `{"user_from_id":1,"user_to_id":2,"amount":100}`, "transfer", "", http.StatusOK},
+		{"invalid comment type", "/accrual", `{"user_id":1,"amount":100,"comment":123}`, "", "", http.StatusBadRequest},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			storage := &commentStorageStub{}
+			router := NewRouter(NewHandler(service.NewService(storage)))
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body)))
+
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d; response = %s", response.Code, test.status, response.Body.String())
+			}
+			if storage.operation != test.operation || storage.comment != test.comment {
+				t.Errorf("storage got operation=%q, comment=%q; want %q, %q",
+					storage.operation, storage.comment, test.operation, test.comment)
+			}
+		})
+	}
+}
