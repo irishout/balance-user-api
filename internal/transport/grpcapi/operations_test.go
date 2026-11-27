@@ -156,3 +156,70 @@ func TestOperationsErrors(t *testing.T) {
 		})
 	}
 }
+
+type operationComment struct {
+	operation string
+	comment   string
+}
+
+type commentStorageStub struct {
+	service.Storage
+	received chan operationComment
+}
+
+func (s *commentStorageStub) Deposit(_ context.Context, _, _ int64, comment string) (int64, error) {
+	s.received <- operationComment{operation: "deposit", comment: comment}
+	return 200, nil
+}
+
+func (s *commentStorageStub) Withdraw(_ context.Context, _, _ int64, comment string) (int64, error) {
+	s.received <- operationComment{operation: "withdraw", comment: comment}
+	return 100, nil
+}
+
+func (s *commentStorageStub) Transfer(_ context.Context, _, _, _ int64, comment string) (int64, int64, error) {
+	s.received <- operationComment{operation: "transfer", comment: comment}
+	return 100, 200, nil
+}
+
+func TestGRPCOperationComments(t *testing.T) {
+	tests := []struct {
+		name    string
+		comment string
+	}{
+		{name: "with comment", comment: "Оплата O'Reilly, заказ №1"},
+		{name: "without comment"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			storage := &commentStorageStub{received: make(chan operationComment, 3)}
+			client := newOperationsClient(t, storage)
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+
+			_, err := client.Deposit(ctx, &balancev1.DepositRequest{UserId: 1, Amount: 100, Comment: test.comment})
+			requireOperationComment(t, storage.received, "deposit", test.comment, err)
+
+			_, err = client.Withdraw(ctx, &balancev1.WithdrawRequest{UserId: 1, Amount: 100, Comment: test.comment})
+			requireOperationComment(t, storage.received, "withdraw", test.comment, err)
+
+			_, err = client.Transfer(ctx, &balancev1.TransferRequest{UserFromId: 1, UserToId: 2, Amount: 100, Comment: test.comment})
+			requireOperationComment(t, storage.received, "transfer", test.comment, err)
+		})
+	}
+}
+
+func requireOperationComment(t *testing.T, received <-chan operationComment, operation, comment string, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("%s: %v", operation, err)
+	}
+	select {
+	case got := <-received:
+		if got.operation != operation || got.comment != comment {
+			t.Fatalf("storage got %+v, want operation=%q, comment=%q", got, operation, comment)
+		}
+	default:
+		t.Fatalf("%s did not call storage", operation)
+	}
+}
