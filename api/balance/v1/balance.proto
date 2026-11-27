@@ -13,10 +13,12 @@ message BalanceResponse {
 message DepositRequest {
   int64 user_id = 1;
   int64 amount = 2;
+  string comment = 3;
 }
 message WithdrawRequest {
   int64 user_id = 1;
   int64 amount = 2;
+  string comment = 3;
 }
 message TransferResponse {
   int64 balance_user_from = 1;
@@ -26,6 +28,7 @@ message TransferRequest {
   int64 user_from_id = 1;
   int64 user_to_id = 2;
   int64 amount = 3;
+  string comment = 4;
 }
 
 message OperationsRequest {

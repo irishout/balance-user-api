@@ -113,6 +113,7 @@ type DepositRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Amount        int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	Comment       string                 `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -161,10 +162,18 @@ func (x *DepositRequest) GetAmount() int64 {
 	return 0
 }
 
+func (x *DepositRequest) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
 type WithdrawRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Amount        int64                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	Comment       string                 `protobuf:"bytes,3,opt,name=comment,proto3" json:"comment,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -211,6 +220,13 @@ func (x *WithdrawRequest) GetAmount() int64 {
 		return x.Amount
 	}
 	return 0
+}
+
+func (x *WithdrawRequest) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
 }
 
 type TransferResponse struct {
@@ -270,6 +286,7 @@ type TransferRequest struct {
 	UserFromId    int64                  `protobuf:"varint,1,opt,name=user_from_id,json=userFromId,proto3" json:"user_from_id,omitempty"`
 	UserToId      int64                  `protobuf:"varint,2,opt,name=user_to_id,json=userToId,proto3" json:"user_to_id,omitempty"`
 	Amount        int64                  `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	Comment       string                 `protobuf:"bytes,4,opt,name=comment,proto3" json:"comment,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -323,6 +340,13 @@ func (x *TransferRequest) GetAmount() int64 {
 		return x.Amount
 	}
 	return 0
+}
+
+func (x *TransferRequest) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
 }
 
 type OperationsRequest struct {
@@ -538,22 +562,25 @@ const file_api_balance_v1_balance_proto_rawDesc = "" +
 	"\x0eBalanceRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\"+\n" +
 	"\x0fBalanceResponse\x12\x18\n" +
-	"\abalance\x18\x01 \x01(\x03R\abalance\"A\n" +
+	"\abalance\x18\x01 \x01(\x03R\abalance\"[\n" +
 	"\x0eDepositRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x03R\x06amount\"B\n" +
+	"\x06amount\x18\x02 \x01(\x03R\x06amount\x12\x18\n" +
+	"\acomment\x18\x03 \x01(\tR\acomment\"\\\n" +
 	"\x0fWithdrawRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\x03R\x06amount\"f\n" +
+	"\x06amount\x18\x02 \x01(\x03R\x06amount\x12\x18\n" +
+	"\acomment\x18\x03 \x01(\tR\acomment\"f\n" +
 	"\x10TransferResponse\x12*\n" +
 	"\x11balance_user_from\x18\x01 \x01(\x03R\x0fbalanceUserFrom\x12&\n" +
-	"\x0fbalance_user_to\x18\x02 \x01(\x03R\rbalanceUserTo\"i\n" +
+	"\x0fbalance_user_to\x18\x02 \x01(\x03R\rbalanceUserTo\"\x83\x01\n" +
 	"\x0fTransferRequest\x12 \n" +
 	"\fuser_from_id\x18\x01 \x01(\x03R\n" +
 	"userFromId\x12\x1c\n" +
 	"\n" +
 	"user_to_id\x18\x02 \x01(\x03R\buserToId\x12\x16\n" +
-	"\x06amount\x18\x03 \x01(\x03R\x06amount\"\x92\x01\n" +
+	"\x06amount\x18\x03 \x01(\x03R\x06amount\x12\x18\n" +
+	"\acomment\x18\x04 \x01(\tR\acomment\"\x92\x01\n" +
 	"\x11OperationsRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x17\n" +
 	"\x04page\x18\x02 \x01(\x05H\x00R\x04page\x88\x01\x01\x12 \n" +
