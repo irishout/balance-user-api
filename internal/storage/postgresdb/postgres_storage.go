@@ -76,7 +76,7 @@ func (s *PostgresStorage) Balance(ctx context.Context, userID int64) (int64, err
 	return balance, nil
 }
 
-func (s *PostgresStorage) Deposit(ctx context.Context, userID, amount int64) (int64, error) {
+func (s *PostgresStorage) Deposit(ctx context.Context, userID, amount int64, comment string) (int64, error) {
 	var balance int64
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -104,12 +104,8 @@ func (s *PostgresStorage) Deposit(ctx context.Context, userID, amount int64) (in
 	}
 
 	_, err = tx.Exec(ctx, `
-								insert into operations (operation_type, user_id, amount)
-								select
-									'deposit',
-									$1,
-									$2`,
-		userID, amount)
+		INSERT INTO operations (operation_type, user_id, amount, comment)
+		VALUES ('deposit', $1, $2, $3)`, userID, amount, comment)
 
 	if err != nil {
 		return 0, err
@@ -123,7 +119,7 @@ func (s *PostgresStorage) Deposit(ctx context.Context, userID, amount int64) (in
 	return balance, nil
 }
 
-func (s *PostgresStorage) Withdraw(ctx context.Context, userID, amount int64) (int64, error) {
+func (s *PostgresStorage) Withdraw(ctx context.Context, userID, amount int64, comment string) (int64, error) {
 	var balance int64
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -149,12 +145,8 @@ func (s *PostgresStorage) Withdraw(ctx context.Context, userID, amount int64) (i
 	}
 
 	_, err = tx.Exec(ctx, `
-								insert into operations (operation_type, user_id, amount)
-								select
-									'withdraw',
-									$1,
-									$2`,
-		userID, amount)
+		INSERT INTO operations (operation_type, user_id, amount, comment)
+		VALUES ('withdraw', $1, $2, $3)`, userID, amount, comment)
 
 	if err != nil {
 		return 0, err
@@ -168,7 +160,7 @@ func (s *PostgresStorage) Withdraw(ctx context.Context, userID, amount int64) (i
 	return balance, nil
 }
 
-func (s *PostgresStorage) Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error) {
+func (s *PostgresStorage) Transfer(ctx context.Context, fromID, toID, amount int64, comment string) (int64, int64, error) {
 	var balanceFrom, balanceTo int64
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -215,13 +207,8 @@ func (s *PostgresStorage) Transfer(ctx context.Context, fromID, toID, amount int
 	}
 
 	_, err = tx.Exec(ctx, `
-								insert into operations (operation_type, user_id, recipient_id, amount)
-								select
-									'transfer',
-									$1,
-									$2,
-									$3`,
-		fromID, toID, amount)
+		INSERT INTO operations (operation_type, user_id, recipient_id, amount, comment)
+		VALUES ('transfer', $1, $2, $3, $4)`, fromID, toID, amount, comment)
 
 	if err != nil {
 		return 0, 0, err

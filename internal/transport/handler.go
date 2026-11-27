@@ -12,8 +12,9 @@ import (
 )
 
 type requestOneID struct {
-	UserID int64 `json:"user_id"`
-	Amount int64 `json:"amount"`
+	UserID  int64  `json:"user_id"`
+	Amount  int64  `json:"amount"`
+	Comment string `json:"comment"`
 }
 
 type responseWithBalance struct {
@@ -25,9 +26,10 @@ type responseError struct {
 }
 
 type requestTransfer struct {
-	UserFromID int64 `json:"user_from_id"`
-	UserToID   int64 `json:"user_to_id"`
-	Amount     int64 `json:"amount"`
+	UserFromID int64  `json:"user_from_id"`
+	UserToID   int64  `json:"user_to_id"`
+	Amount     int64  `json:"amount"`
+	Comment    string `json:"comment"`
 }
 
 type responseTransfer struct {
@@ -115,7 +117,7 @@ func (h *Handler) Deposit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balance, err := h.svc.Deposit(ctx, req.UserID, req.Amount)
+	balance, err := h.svc.Deposit(ctx, req.UserID, req.Amount, req.Comment)
 	if err != nil {
 		errorHandler(w, err)
 		return
@@ -133,7 +135,7 @@ func (h *Handler) Withdraw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balance, err := h.svc.Withdraw(ctx, req.UserID, req.Amount)
+	balance, err := h.svc.Withdraw(ctx, req.UserID, req.Amount, req.Comment)
 	if err != nil {
 		errorHandler(w, err)
 		return
@@ -152,7 +154,7 @@ func (h *Handler) Transfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balanceFrom, balanceTo, err := h.svc.Transfer(ctx, req.UserFromID, req.UserToID, req.Amount)
+	balanceFrom, balanceTo, err := h.svc.Transfer(ctx, req.UserFromID, req.UserToID, req.Amount, req.Comment)
 	if err != nil {
 		errorHandler(w, err)
 		return

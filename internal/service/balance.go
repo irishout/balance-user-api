@@ -8,9 +8,9 @@ import (
 
 type Storage interface {
 	Balance(ctx context.Context, userID int64) (int64, error)
-	Deposit(ctx context.Context, userID, amount int64) (int64, error)
-	Withdraw(ctx context.Context, userID, amount int64) (int64, error)
-	Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error)
+	Deposit(ctx context.Context, userID, amount int64, comment string) (int64, error)
+	Withdraw(ctx context.Context, userID, amount int64, comment string) (int64, error)
+	Transfer(ctx context.Context, fromID, toID, amount int64, comment string) (int64, int64, error)
 	ListOperations(ctx context.Context, userID int64, limit, offset int, sortBy string) ([]domain.Operation, error)
 }
 
@@ -24,7 +24,7 @@ func NewService(s Storage) *Service {
 	}
 }
 
-func (s *Service) Deposit(ctx context.Context, userID, amount int64) (int64, error) {
+func (s *Service) Deposit(ctx context.Context, userID, amount int64, comment string) (int64, error) {
 	if userID <= 0 {
 		return 0, domain.ErrInvalidUserID
 	}
@@ -33,10 +33,10 @@ func (s *Service) Deposit(ctx context.Context, userID, amount int64) (int64, err
 		return 0, domain.ErrInvalidAmount
 	}
 
-	return s.storage.Deposit(ctx, userID, amount)
+	return s.storage.Deposit(ctx, userID, amount, comment)
 }
 
-func (s *Service) Withdraw(ctx context.Context, userID, amount int64) (int64, error) {
+func (s *Service) Withdraw(ctx context.Context, userID, amount int64, comment string) (int64, error) {
 	if userID <= 0 {
 		return 0, domain.ErrInvalidUserID
 	}
@@ -45,10 +45,10 @@ func (s *Service) Withdraw(ctx context.Context, userID, amount int64) (int64, er
 		return 0, domain.ErrInvalidAmount
 	}
 
-	return s.storage.Withdraw(ctx, userID, amount)
+	return s.storage.Withdraw(ctx, userID, amount, comment)
 }
 
-func (s *Service) Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error) {
+func (s *Service) Transfer(ctx context.Context, fromID, toID, amount int64, comment string) (int64, int64, error) {
 	if fromID <= 0 {
 		return 0, 0, domain.ErrInvalidSenderID
 	}
@@ -65,7 +65,7 @@ func (s *Service) Transfer(ctx context.Context, fromID, toID, amount int64) (int
 		return 0, 0, domain.ErrInvalidAmount
 	}
 
-	return s.storage.Transfer(ctx, fromID, toID, amount)
+	return s.storage.Transfer(ctx, fromID, toID, amount, comment)
 }
 
 func (s *Service) Balance(ctx context.Context, userID int64) (int64, error) {

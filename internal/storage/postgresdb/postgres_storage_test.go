@@ -42,12 +42,12 @@ func TestTransferRollbackRecipientNotFound(t *testing.T) {
 	ctx := context.Background()
 	storage := newTestPostgresStorage(t, ctx)
 
-	_, err := storage.Deposit(ctx, 1, 1000)
+	_, err := storage.Deposit(ctx, 1, 1000, "")
 	if err != nil {
 		t.Fatalf("storage Deposit error %v", err)
 	}
 
-	_, _, err = storage.Transfer(ctx, 1, 2, 300)
+	_, _, err = storage.Transfer(ctx, 1, 2, 300, "")
 	if !errors.Is(err, domain.ErrRecipientNotFound) {
 		t.Fatalf("Expected error: %v, got: %v", domain.ErrRecipientNotFound, err)
 	}
@@ -65,7 +65,7 @@ func TestWithdrawConcurrent(t *testing.T) {
 	ctx := context.Background()
 	storage := newTestPostgresStorage(t, ctx)
 
-	_, err := storage.Deposit(ctx, 1, 100000)
+	_, err := storage.Deposit(ctx, 1, 100000, "")
 	if err != nil {
 		t.Fatalf("storage Deposit error %v", err)
 	}
@@ -77,7 +77,7 @@ func TestWithdrawConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := storage.Withdraw(ctx, 1, 1000)
+			_, err := storage.Withdraw(ctx, 1, 1000, "")
 			errorsSlice[i] = err
 		}()
 	}
@@ -114,12 +114,12 @@ func TestTransferConcurrentOppositeDirections(t *testing.T) {
 	defer cancel()
 	storage := newTestPostgresStorage(t, ctx)
 
-	_, err := storage.Deposit(ctx, 1, 1000)
+	_, err := storage.Deposit(ctx, 1, 1000, "")
 	if err != nil {
 		t.Fatalf("storage Deposit error %v", err)
 	}
 
-	_, err = storage.Deposit(ctx, 2, 1000)
+	_, err = storage.Deposit(ctx, 2, 1000, "")
 	if err != nil {
 		t.Fatalf("storage Deposit error %v", err)
 	}
@@ -131,13 +131,13 @@ func TestTransferConcurrentOppositeDirections(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, err1 := storage.Transfer(ctx, 1, 2, 1)
+			_, _, err1 := storage.Transfer(ctx, 1, 2, 1, "")
 			errorsSlice[i] = err1
 		}()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, err2 := storage.Transfer(ctx, 2, 1, 1)
+			_, _, err2 := storage.Transfer(ctx, 2, 1, 1, "")
 			errorsSlice[100+i] = err2
 		}()
 	}
@@ -179,16 +179,16 @@ func TestListOperations(t *testing.T) {
 	defer cancel()
 	storage := newTestPostgresStorage(t, ctx)
 
-	if _, err := storage.Deposit(ctx, 1, 1000); err != nil {
+	if _, err := storage.Deposit(ctx, 1, 1000, ""); err != nil {
 		t.Fatalf("deposit for sender: %v", err)
 	}
-	if _, err := storage.Deposit(ctx, 2, 200); err != nil {
+	if _, err := storage.Deposit(ctx, 2, 200, ""); err != nil {
 		t.Fatalf("deposit for recipient: %v", err)
 	}
-	if _, _, err := storage.Transfer(ctx, 1, 2, 300); err != nil {
+	if _, _, err := storage.Transfer(ctx, 1, 2, 300, ""); err != nil {
 		t.Fatalf("transfer: %v", err)
 	}
-	if _, err := storage.Withdraw(ctx, 2, 300); err != nil {
+	if _, err := storage.Withdraw(ctx, 2, 300, ""); err != nil {
 		t.Fatalf("withdraw: %v", err)
 	}
 
@@ -253,10 +253,10 @@ func TestBalanceChangesRollbackWhenHistoryInsertFails(t *testing.T) {
 	}
 	storage := NewPostgresStorage(pool)
 
-	if _, err := storage.Deposit(ctx, 1, 1000); err != nil {
+	if _, err := storage.Deposit(ctx, 1, 1000, ""); err != nil {
 		t.Fatalf("seed sender balance: %v", err)
 	}
-	if _, err := storage.Deposit(ctx, 2, 500); err != nil {
+	if _, err := storage.Deposit(ctx, 2, 500, ""); err != nil {
 		t.Fatalf("seed recipient balance: %v", err)
 	}
 
@@ -271,15 +271,15 @@ func TestBalanceChangesRollbackWhenHistoryInsertFails(t *testing.T) {
 		run  func() error
 	}{
 		{"deposit", func() error {
-			_, err := storage.Deposit(ctx, 1, 300)
+			_, err := storage.Deposit(ctx, 1, 300, "")
 			return err
 		}},
 		{"withdraw", func() error {
-			_, err := storage.Withdraw(ctx, 1, 300)
+			_, err := storage.Withdraw(ctx, 1, 300, "")
 			return err
 		}},
 		{"transfer", func() error {
-			_, _, err := storage.Transfer(ctx, 1, 2, 300)
+			_, _, err := storage.Transfer(ctx, 1, 2, 300, "")
 			return err
 		}},
 	}

@@ -35,7 +35,7 @@ func (s *MapStorage) Balance(ctx context.Context, userID int64) (int64, error) {
 	return balance, nil
 }
 
-func (s *MapStorage) Deposit(ctx context.Context, userID, amount int64) (int64, error) {
+func (s *MapStorage) Deposit(ctx context.Context, userID, amount int64, _ string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	balance := s.balances[userID]
@@ -48,7 +48,7 @@ func (s *MapStorage) Deposit(ctx context.Context, userID, amount int64) (int64, 
 	return balance + amount, nil
 }
 
-func (s *MapStorage) Withdraw(ctx context.Context, userID, amount int64) (int64, error) {
+func (s *MapStorage) Withdraw(ctx context.Context, userID, amount int64, _ string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	balance, ok := s.balances[userID]
@@ -64,7 +64,7 @@ func (s *MapStorage) Withdraw(ctx context.Context, userID, amount int64) (int64,
 	return balance - amount, nil
 }
 
-func (s *MapStorage) Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error) {
+func (s *MapStorage) Transfer(ctx context.Context, fromID, toID, amount int64, _ string) (int64, int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fromBalance, ok_from := s.balances[fromID]

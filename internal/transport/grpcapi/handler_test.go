@@ -73,7 +73,7 @@ func TestGetBalanceSuccess(t *testing.T) {
 			h, svc := newHandlerWithBalances(t, map[int64]int64{7: 1000})
 			ctx := context.Background()
 			if wantBalance == 0 {
-				if _, err := svc.Withdraw(ctx, 7, 1000); err != nil {
+				if _, err := svc.Withdraw(ctx, 7, 1000, ""); err != nil {
 					t.Fatalf("prepare zero balance: %v", err)
 				}
 			}
@@ -270,7 +270,7 @@ func newHandlerWithBalances(t *testing.T, balances map[int64]int64) (*Handler, *
 	t.Helper()
 	svc := service.NewService(local.NewMapStorage())
 	for userID, balance := range balances {
-		if _, err := svc.Deposit(context.Background(), userID, balance); err != nil {
+		if _, err := svc.Deposit(context.Background(), userID, balance, ""); err != nil {
 			t.Fatalf("prepare balance for user %d: %v", userID, err)
 		}
 	}

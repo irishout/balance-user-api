@@ -65,7 +65,7 @@ func TestWithdrawInsufficientFunds(t *testing.T) {
 	storage := local.NewMapStorage()
 	svc := service.NewService(storage)
 	h := NewHandler(svc)
-	_, err := svc.Deposit(context.Background(), 1, 500)
+	_, err := svc.Deposit(context.Background(), 1, 500, "")
 	if err != nil {
 		t.Fatalf("got Deposit error %v", err)
 	}
@@ -93,7 +93,7 @@ func TestWithdrawSuccess(t *testing.T) {
 	storage := local.NewMapStorage()
 	svc := service.NewService(storage)
 	h := NewHandler(svc)
-	_, err := svc.Deposit(context.Background(), 1, 500)
+	_, err := svc.Deposit(context.Background(), 1, 500, "")
 	if err != nil {
 		t.Fatalf("got Deposit error %v", err)
 	}
@@ -120,11 +120,11 @@ func TestTransferSuccess(t *testing.T) {
 	storage := local.NewMapStorage()
 	svc := service.NewService(storage)
 	h := NewHandler(svc)
-	_, err := svc.Deposit(context.Background(), 1, 1000)
+	_, err := svc.Deposit(context.Background(), 1, 1000, "")
 	if err != nil {
 		t.Fatalf("got Deposit error %v", err)
 	}
-	_, err = svc.Deposit(context.Background(), 2, 500)
+	_, err = svc.Deposit(context.Background(), 2, 500, "")
 	if err != nil {
 		t.Fatalf("got Deposit error %v", err)
 	}
@@ -159,7 +159,7 @@ func TestBalanceSuccess(t *testing.T) {
 	h := NewHandler(svc)
 	router := NewRouter(h)
 
-	if _, err := svc.Deposit(context.Background(), 1, 1000); err != nil {
+	if _, err := svc.Deposit(context.Background(), 1, 1000, ""); err != nil {
 		t.Fatalf("prepare balance: %v", err)
 	}
 

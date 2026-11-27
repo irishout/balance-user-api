@@ -24,18 +24,18 @@ type storageMock struct {
 	listOperations func(ctx context.Context, userID int64, limit, offset int, sortBy string) ([]domain.Operation, error)
 }
 
-func (s *storageMock) Deposit(ctx context.Context, userID, amount int64) (int64, error) {
+func (s *storageMock) Deposit(ctx context.Context, userID, amount int64, _ string) (int64, error) {
 	s.receivedUserID = userID
 	s.receivedAmount = amount
 	return 1500, s.depositErr
 }
-func (s *storageMock) Withdraw(ctx context.Context, userID, amount int64) (int64, error) {
+func (s *storageMock) Withdraw(ctx context.Context, userID, amount int64, _ string) (int64, error) {
 	s.withdrawCalls++
 	s.receivedUserID = userID
 	s.receivedAmount = amount
 	return 1500, s.withdrawErr
 }
-func (s *storageMock) Transfer(ctx context.Context, fromID, toID, amount int64) (int64, int64, error) {
+func (s *storageMock) Transfer(ctx context.Context, fromID, toID, amount int64, _ string) (int64, int64, error) {
 	s.transferCalls++
 	s.receivedFromID = fromID
 	s.receivedToID = toID
@@ -97,7 +97,7 @@ func TestDepositSuccess(t *testing.T) {
 	storage := &storageMock{}
 	svc := NewService(storage)
 
-	balance, err := svc.Deposit(context.Background(), 1, 1000)
+	balance, err := svc.Deposit(context.Background(), 1, 1000, "")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -117,7 +117,7 @@ func TestDepositStorageError(t *testing.T) {
 	storage := &storageMock{depositErr: wantErr}
 	svc := NewService(storage)
 
-	_, err := svc.Deposit(context.Background(), 1, 1000)
+	_, err := svc.Deposit(context.Background(), 1, 1000, "")
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected storage error %v, got %v", wantErr, err)
 	}
@@ -143,7 +143,7 @@ func TestDepositInvalidAmount(t *testing.T) {
 	svc := NewService(nil)
 	for _, tc := range errTable {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := svc.Deposit(context.Background(), 1, tc.amount)
+			_, err := svc.Deposit(context.Background(), 1, tc.amount, "")
 
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatal("Case:", tc.name, "Expected:", tc.wantErr, "Got:", err)
@@ -171,7 +171,7 @@ func TestDepositInvalidUserID(t *testing.T) {
 	svc := NewService(nil)
 	for _, tc := range errTable {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := svc.Deposit(context.Background(), tc.ID, 100)
+			_, err := svc.Deposit(context.Background(), tc.ID, 100, "")
 
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatal("Case:", tc.name, "Expected:", tc.wantErr, "Got:", err)
@@ -184,7 +184,7 @@ func TestWithdrawSuccess(t *testing.T) {
 	storage := &storageMock{}
 	svc := NewService(storage)
 
-	balance, err := svc.Withdraw(context.Background(), 1, 1000)
+	balance, err := svc.Withdraw(context.Background(), 1, 1000, "")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -217,7 +217,7 @@ func TestWithdrawStorageError(t *testing.T) {
 			storage := &storageMock{withdrawErr: tc.wantErr}
 			svc := NewService(storage)
 
-			_, err := svc.Withdraw(context.Background(), 1, 1000)
+			_, err := svc.Withdraw(context.Background(), 1, 1000, "")
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("expected storage error %v, got %v", tc.wantErr, err)
 			}
@@ -240,7 +240,7 @@ func TestWithdrawInvalidAmount(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := NewService(nil)
-			_, err := svc.Withdraw(context.Background(), 1, tc.amount)
+			_, err := svc.Withdraw(context.Background(), 1, tc.amount, "")
 			if !errors.Is(err, domain.ErrInvalidAmount) {
 				t.Fatalf("expected %v, got %v", domain.ErrInvalidAmount, err)
 			}
@@ -260,7 +260,7 @@ func TestWithdrawInvalidUserID(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := NewService(nil)
-			_, err := svc.Withdraw(context.Background(), tc.userID, 100)
+			_, err := svc.Withdraw(context.Background(), tc.userID, 100, "")
 			if !errors.Is(err, domain.ErrInvalidUserID) {
 				t.Fatalf("expected %v, got %v", domain.ErrInvalidUserID, err)
 			}
@@ -272,7 +272,7 @@ func TestTransferSuccess(t *testing.T) {
 	storage := &storageMock{}
 	svc := NewService(storage)
 
-	fromBalance, toBalance, err := svc.Transfer(context.Background(), 1, 2, 500)
+	fromBalance, toBalance, err := svc.Transfer(context.Background(), 1, 2, 500, "")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -313,7 +313,7 @@ func TestTransferStorageError(t *testing.T) {
 			storage := &storageMock{transferErr: tc.wantErr}
 			svc := NewService(storage)
 
-			_, _, err := svc.Transfer(context.Background(), 1, 2, 500)
+			_, _, err := svc.Transfer(context.Background(), 1, 2, 500, "")
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("expected storage error %v, got %v", tc.wantErr, err)
 			}
@@ -344,7 +344,7 @@ func TestTransferInvalidInput(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := NewService(nil)
-			_, _, err := svc.Transfer(context.Background(), tc.fromID, tc.toID, tc.amount)
+			_, _, err := svc.Transfer(context.Background(), tc.fromID, tc.toID, tc.amount, "")
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("expected %v, got %v", tc.wantErr, err)
 			}
