@@ -1,6 +1,6 @@
 # balance-user-api
 
-Учебный сервис балансов по [тестовому заданию Авито](docs/task.md): начисление, списание, перевод и получение остатка. Деньги хранятся в копейках. Есть HTTP JSON API и gRPC, хранилище в PostgreSQL или в памяти.
+Сервис балансов с HTTP и gRPC. Поддерживает начисление, списание, переводы, получение баланса и историю операций. Суммы передаются целыми числами в копейках. [Тестовое задание Авито](docs/task.md)
 
 Go 1.26.3 · net/http · pgx · PostgreSQL 18 · gRPC · Docker Compose
 
@@ -8,31 +8,32 @@ Go 1.26.3 · net/http · pgx · PostgreSQL 18 · gRPC · Docker Compose
 
 - [Запуск](#запуск)
 - [HTTP API](#http-api)
+- [История операций](#история-операций)
 - [gRPC](#grpc)
 - [Тесты](#тесты)
-- [Решения по заданию](#решения-по-заданию)
 
 Устройство слоёв, транзакции и генерация Protobuf описаны в [архитектуре](docs/architecture.md).
 
 ## Запуск
 
-Нужен Docker с Compose. Из корня проекта:
+Для запуска нужен Docker Compose. Выполните команды из корня проекта.
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-HTTP API доступен на `localhost:8080`, PostgreSQL — на `localhost:5433`. Проверка:
+По умолчанию HTTP доступен на `localhost:8080`, PostgreSQL — на `localhost:5433`. Команда `curl localhost:8080/ping` возвращает `pong`.
+
+При первом запуске с пустым томом Compose применяет обе [миграции](migrations). Если том создан до добавления истории, примените вторую миграцию к работающей базе.
 
 ```bash
-curl localhost:8080/ping
-# pong
+docker compose exec -T db sh -c \
+  'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < migrations/002_operations.sql
 ```
 
-Compose ждёт готовности базы и применяет [SQL-схему](migrations/001_init.sql) при первом запуске с пустым томом. `docker compose down` сохраняет данные, `docker compose down -v` удаляет их вместе с томом.
-
-Для запуска приложения локально нужен Go 1.26.3 или новее. После создания `.env`:
+Для локального запуска приложения нужен Go 1.26.3 или новее. Создайте `.env` и освободите порт `8080`, если его занимает контейнер `app`.
 
 ```bash
 docker compose up -d --wait db
@@ -40,30 +41,15 @@ set -a; source .env; set +a
 go run ./cmd/app
 ```
 
-Контейнер `app` при этом должен быть остановлен, чтобы освободить порт. Без PostgreSQL можно запустить версию в памяти:
+Запуск с хранилищем в памяти.
 
 ```bash
 STORAGE=memory TRANSPORT=http go run ./cmd/app
 ```
 
-Данные в памяти теряются при остановке процесса.
-
-Настройки читаются из окружения. Go сам не загружает `.env`; пример всех переменных есть в [.env.example](.env.example).
-
-| Переменная | Значение |
-|---|---|
-| `STORAGE` | Обязательна: `postgres` или `memory` |
-| `TRANSPORT` | Обязательна: `http` или `grpc` |
-| `DATABASE_URL` | Обязательна для PostgreSQL; с хоста — `localhost:5433`, из Compose — `db:5432` |
-| `PORT` | Порт выбранного сервера, по умолчанию `8080` |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Настройки базы для Compose |
-| `TEST_DATABASE_URL` | Адрес отдельной базы `balance_test` для интеграционных тестов |
-
-В Compose порт приложения закреплён как `8080`, хранилище — `postgres`. Неизвестные `STORAGE` / `TRANSPORT` или ошибка подключения к базе останавливают приложение.
+При локальном запуске укажите `STORAGE` и `TRANSPORT`. Для `STORAGE=postgres` нужен `DATABASE_URL`. Порт `PORT` по умолчанию равен `8080`. [Пример настроек](.env.example)
 
 ## HTTP API
-
-Все суммы — целые числа в копейках: `100000` = 1000 ₽. Успешные операции возвращают HTTP 200 и новый баланс.
 
 | Метод | Путь | Запрос |
 |---|---|---|
@@ -71,71 +57,70 @@ STORAGE=memory TRANSPORT=http go run ./cmd/app
 | POST | `/debiting` | `{"user_id": 1, "amount": 30000}` |
 | POST | `/transfer` | `{"user_from_id": 1, "user_to_id": 2, "amount": 20000}` |
 | GET | `/balance/{user_id}` | Без тела |
+| GET | `/operations/{user_id}` | Параметры истории в URL |
 
-Пример для пустого хранилища — начислить обоим пользователям, списать и перевести:
+Пример начисления с комментарием и запроса истории.
 
 ```bash
-curl -X POST localhost:8080/accrual -d '{"user_id": 1, "amount": 100000}'
-curl -X POST localhost:8080/accrual -d '{"user_id": 2, "amount": 50000}'
-curl -X POST localhost:8080/debiting -d '{"user_id": 1, "amount": 30000}'
-curl -X POST localhost:8080/transfer -d '{"user_from_id": 1, "user_to_id": 2, "amount": 20000}'
-curl localhost:8080/balance/1
+curl -sS localhost:8080/accrual -H 'Content-Type: application/json' \
+  -d '{"user_id":1,"amount":100000,"comment":"Пополнение картой"}'
+curl -sS 'http://localhost:8080/operations/1?sort=amount&page_size=5'
 ```
 
-Начисление, списание и получение баланса возвращают `{"balance": ...}`. В этом примере ответ перевода — `{"balance_user_from":50000,"balance_user_to":70000}`, последний запрос вернёт `{"balance":50000}`.
+Начисление, списание и чтение баланса возвращают `{"balance":100000}` с актуальной суммой. Перевод возвращает `balance_user_from` и `balance_user_to`. Ошибки API содержат поле `error`.
 
-Ошибки обработчика возвращаются в JSON, например HTTP 409 с телом `{"error":"insufficient funds"}`. Неверные данные дают 400, отсутствующий пользователь — 404, нехватка средств или переполнение — 409, внутренняя ошибка — 500. Роутер сам отвечает текстом на неизвестные пути (404) и неподдерживаемые методы (405).
+## История операций
+
+Начисление, списание и перевод принимают необязательный `comment`. История доступна через HTTP и gRPC с хранилищем PostgreSQL. Перевод виден обоим участникам.
+
+По умолчанию `page=1`, `page_size=20` и `sort=date`. `sort=date` показывает свежие операции первыми, `sort=amount` — операции с большей суммой первыми. HTTP возвращает массив в поле `operations`.
 
 ## gRPC
 
-Чтобы переключить приложение с HTTP на gRPC:
+Для запуска gRPC на порту `8080` выполните команду.
 
 ```bash
 TRANSPORT=grpc docker compose up --build
 ```
 
-На том же порту 8080 запустится один gRPC-сервер. HTTP-маршруты, включая `/ping`, в этом режиме недоступны.
-
-Сервис `balance.v1.BalanceService` предоставляет `GetBalance`, `Deposit`, `Withdraw` и `Transfer`. Поля запросов и ответов — в [balance.proto](api/balance/v1/balance.proto).
-
-Пример через `grpcurl` из корня проекта. На macOS клиент можно установить командой `brew install grpcurl`:
+Сервис `balance.v1.BalanceService` предоставляет `GetBalance`, `Deposit`, `Withdraw`, `Transfer` и `Operations`. Для вызовов через `grpcurl` используйте `-plaintext` и локальный [balance.proto](api/balance/v1/balance.proto).
 
 ```bash
 grpcurl -plaintext -import-path . -proto api/balance/v1/balance.proto \
-  -d '{"user_id": 1, "amount": 1000}' localhost:8080 balance.v1.BalanceService/Deposit
+  -d '{"user_id":1,"amount":1000,"comment":"Пополнение картой"}' \
+  localhost:8080 balance.v1.BalanceService/Deposit
 
 grpcurl -plaintext -import-path . -proto api/balance/v1/balance.proto \
-  -d '{"user_id": 1}' localhost:8080 balance.v1.BalanceService/GetBalance
+  -d '{"user_id":1,"page_size":5,"sort":"amount"}' \
+  localhost:8080 balance.v1.BalanceService/Operations
 ```
 
-Для нового пользователя ответ — `{"balance":"1000"}`. `grpcurl` показывает `int64` строками, поля перевода — как `balanceUserFrom` и `balanceUserTo`. Сервер работает без TLS и reflection, поэтому нужны `-plaintext` и локальный `.proto`.
+`grpcurl` выводит значения `int64` строками. Например, баланс нового пользователя после начисления выше будет `{"balance":"1000"}`.
 
 ## Тесты
 
-Сборка, статический анализ и тесты без PostgreSQL:
+Проверка сборки и запуск тестов.
 
 ```bash
 go build ./...
 go vet ./...
-go test -race -count=1 ./internal/service ./internal/transport/...
+go test -race -count=1 -timeout=30s ./...
 ```
 
-В service используется мок `Storage`, в тестах HTTP и gRPC — настоящий service и хранилище в памяти.
-
-Интеграционные тесты требуют отдельную базу. Однократная подготовка с настройками из `.env.example`:
+Без `TEST_DATABASE_URL` интеграционные тесты PostgreSQL пропускаются. Для их запуска подготовьте `balance_test` и примените обе миграции. Команды используют настройки из `.env.example`.
 
 ```bash
 docker compose up -d --wait db
 docker compose exec -T db psql -U balance -d balance -c 'CREATE DATABASE balance_test;'
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U balance -d balance_test < migrations/001_init.sql
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U balance -d balance_test < migrations/002_operations.sql
 ```
 
-Если `balance_test` уже существует, пропустите `CREATE DATABASE`. Затем загрузите `.env` с `TEST_DATABASE_URL` и запустите все тесты:
+Если `balance_test` уже существует, пропустите `CREATE DATABASE`. Загрузите `.env` и запустите тесты повторно.
 
 ```bash
 set -a; source .env; set +a
 go test -race -count=1 -timeout=30s ./...
 ```
 
-Без `TEST_DATABASE_URL` тесты PostgreSQL пропускаются. Они проверяют откат перевода, параллельные списания и встречные переводы. Перед каждым сценарием очищается `user_balance` в базе `balance_test`; несколько запусков на одной базе одновременно не поддерживаются.
-
+Интеграционные тесты очищают `user_balance` и `operations` в `balance_test` перед каждым сценарием. Запускайте их на этой базе по одному процессу.
