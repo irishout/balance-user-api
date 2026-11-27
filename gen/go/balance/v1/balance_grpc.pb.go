@@ -23,6 +23,7 @@ const (
 	BalanceService_Deposit_FullMethodName    = "/balance.v1.BalanceService/Deposit"
 	BalanceService_Withdraw_FullMethodName   = "/balance.v1.BalanceService/Withdraw"
 	BalanceService_Transfer_FullMethodName   = "/balance.v1.BalanceService/Transfer"
+	BalanceService_Operations_FullMethodName = "/balance.v1.BalanceService/Operations"
 )
 
 // BalanceServiceClient is the client API for BalanceService service.
@@ -33,6 +34,7 @@ type BalanceServiceClient interface {
 	Deposit(ctx context.Context, in *DepositRequest, opts ...grpc.CallOption) (*BalanceResponse, error)
 	Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*BalanceResponse, error)
 	Transfer(ctx context.Context, in *TransferRequest, opts ...grpc.CallOption) (*TransferResponse, error)
+	Operations(ctx context.Context, in *OperationsRequest, opts ...grpc.CallOption) (*OperationsResponse, error)
 }
 
 type balanceServiceClient struct {
@@ -83,6 +85,16 @@ func (c *balanceServiceClient) Transfer(ctx context.Context, in *TransferRequest
 	return out, nil
 }
 
+func (c *balanceServiceClient) Operations(ctx context.Context, in *OperationsRequest, opts ...grpc.CallOption) (*OperationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OperationsResponse)
+	err := c.cc.Invoke(ctx, BalanceService_Operations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BalanceServiceServer is the server API for BalanceService service.
 // All implementations must embed UnimplementedBalanceServiceServer
 // for forward compatibility.
@@ -91,6 +103,7 @@ type BalanceServiceServer interface {
 	Deposit(context.Context, *DepositRequest) (*BalanceResponse, error)
 	Withdraw(context.Context, *WithdrawRequest) (*BalanceResponse, error)
 	Transfer(context.Context, *TransferRequest) (*TransferResponse, error)
+	Operations(context.Context, *OperationsRequest) (*OperationsResponse, error)
 	mustEmbedUnimplementedBalanceServiceServer()
 }
 
@@ -112,6 +125,9 @@ func (UnimplementedBalanceServiceServer) Withdraw(context.Context, *WithdrawRequ
 }
 func (UnimplementedBalanceServiceServer) Transfer(context.Context, *TransferRequest) (*TransferResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Transfer not implemented")
+}
+func (UnimplementedBalanceServiceServer) Operations(context.Context, *OperationsRequest) (*OperationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Operations not implemented")
 }
 func (UnimplementedBalanceServiceServer) mustEmbedUnimplementedBalanceServiceServer() {}
 func (UnimplementedBalanceServiceServer) testEmbeddedByValue()                        {}
@@ -206,6 +222,24 @@ func _BalanceService_Transfer_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BalanceService_Operations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OperationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BalanceServiceServer).Operations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BalanceService_Operations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BalanceServiceServer).Operations(ctx, req.(*OperationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BalanceService_ServiceDesc is the grpc.ServiceDesc for BalanceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -228,6 +262,10 @@ var BalanceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Transfer",
 			Handler:    _BalanceService_Transfer_Handler,
+		},
+		{
+			MethodName: "Operations",
+			Handler:    _BalanceService_Operations_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

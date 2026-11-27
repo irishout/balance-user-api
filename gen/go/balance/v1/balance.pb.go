@@ -325,6 +325,210 @@ func (x *TransferRequest) GetAmount() int64 {
 	return 0
 }
 
+type OperationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Page          *int32                 `protobuf:"varint,2,opt,name=page,proto3,oneof" json:"page,omitempty"`
+	PageSize      *int32                 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
+	Sort          string                 `protobuf:"bytes,4,opt,name=sort,proto3" json:"sort,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperationsRequest) Reset() {
+	*x = OperationsRequest{}
+	mi := &file_api_balance_v1_balance_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperationsRequest) ProtoMessage() {}
+
+func (x *OperationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_balance_v1_balance_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperationsRequest.ProtoReflect.Descriptor instead.
+func (*OperationsRequest) Descriptor() ([]byte, []int) {
+	return file_api_balance_v1_balance_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *OperationsRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *OperationsRequest) GetPage() int32 {
+	if x != nil && x.Page != nil {
+		return *x.Page
+	}
+	return 0
+}
+
+func (x *OperationsRequest) GetPageSize() int32 {
+	if x != nil && x.PageSize != nil {
+		return *x.PageSize
+	}
+	return 0
+}
+
+func (x *OperationsRequest) GetSort() string {
+	if x != nil {
+		return x.Sort
+	}
+	return ""
+}
+
+type OperationsResponse struct {
+	state         protoimpl.MessageState          `protogen:"open.v1"`
+	Operations    []*OperationsResponse_Operation `protobuf:"bytes,1,rep,name=operations,proto3" json:"operations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperationsResponse) Reset() {
+	*x = OperationsResponse{}
+	mi := &file_api_balance_v1_balance_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperationsResponse) ProtoMessage() {}
+
+func (x *OperationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_balance_v1_balance_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperationsResponse.ProtoReflect.Descriptor instead.
+func (*OperationsResponse) Descriptor() ([]byte, []int) {
+	return file_api_balance_v1_balance_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *OperationsResponse) GetOperations() []*OperationsResponse_Operation {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
+}
+
+type OperationsResponse_Operation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	OperationType string                 `protobuf:"bytes,2,opt,name=operation_type,json=operationType,proto3" json:"operation_type,omitempty"`
+	OperationDate string                 `protobuf:"bytes,3,opt,name=operation_date,json=operationDate,proto3" json:"operation_date,omitempty"`
+	UserId        int64                  `protobuf:"varint,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	RecipientId   *int64                 `protobuf:"varint,5,opt,name=recipient_id,json=recipientId,proto3,oneof" json:"recipient_id,omitempty"`
+	Amount        int64                  `protobuf:"varint,6,opt,name=amount,proto3" json:"amount,omitempty"`
+	Comment       string                 `protobuf:"bytes,7,opt,name=comment,proto3" json:"comment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperationsResponse_Operation) Reset() {
+	*x = OperationsResponse_Operation{}
+	mi := &file_api_balance_v1_balance_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperationsResponse_Operation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperationsResponse_Operation) ProtoMessage() {}
+
+func (x *OperationsResponse_Operation) ProtoReflect() protoreflect.Message {
+	mi := &file_api_balance_v1_balance_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperationsResponse_Operation.ProtoReflect.Descriptor instead.
+func (*OperationsResponse_Operation) Descriptor() ([]byte, []int) {
+	return file_api_balance_v1_balance_proto_rawDescGZIP(), []int{7, 0}
+}
+
+func (x *OperationsResponse_Operation) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *OperationsResponse_Operation) GetOperationType() string {
+	if x != nil {
+		return x.OperationType
+	}
+	return ""
+}
+
+func (x *OperationsResponse_Operation) GetOperationDate() string {
+	if x != nil {
+		return x.OperationDate
+	}
+	return ""
+}
+
+func (x *OperationsResponse_Operation) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *OperationsResponse_Operation) GetRecipientId() int64 {
+	if x != nil && x.RecipientId != nil {
+		return *x.RecipientId
+	}
+	return 0
+}
+
+func (x *OperationsResponse_Operation) GetAmount() int64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+func (x *OperationsResponse_Operation) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
 var File_api_balance_v1_balance_proto protoreflect.FileDescriptor
 
 const file_api_balance_v1_balance_proto_rawDesc = "" +
@@ -349,13 +553,36 @@ const file_api_balance_v1_balance_proto_rawDesc = "" +
 	"userFromId\x12\x1c\n" +
 	"\n" +
 	"user_to_id\x18\x02 \x01(\x03R\buserToId\x12\x16\n" +
-	"\x06amount\x18\x03 \x01(\x03R\x06amount2\xa8\x02\n" +
+	"\x06amount\x18\x03 \x01(\x03R\x06amount\"\x92\x01\n" +
+	"\x11OperationsRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x17\n" +
+	"\x04page\x18\x02 \x01(\x05H\x00R\x04page\x88\x01\x01\x12 \n" +
+	"\tpage_size\x18\x03 \x01(\x05H\x01R\bpageSize\x88\x01\x01\x12\x12\n" +
+	"\x04sort\x18\x04 \x01(\tR\x04sortB\a\n" +
+	"\x05_pageB\f\n" +
+	"\n" +
+	"_page_size\"\xce\x02\n" +
+	"\x12OperationsResponse\x12H\n" +
+	"\n" +
+	"operations\x18\x01 \x03(\v2(.balance.v1.OperationsResponse.OperationR\n" +
+	"operations\x1a\xed\x01\n" +
+	"\tOperation\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12%\n" +
+	"\x0eoperation_type\x18\x02 \x01(\tR\roperationType\x12%\n" +
+	"\x0eoperation_date\x18\x03 \x01(\tR\roperationDate\x12\x17\n" +
+	"\auser_id\x18\x04 \x01(\x03R\x06userId\x12&\n" +
+	"\frecipient_id\x18\x05 \x01(\x03H\x00R\vrecipientId\x88\x01\x01\x12\x16\n" +
+	"\x06amount\x18\x06 \x01(\x03R\x06amount\x12\x18\n" +
+	"\acomment\x18\a \x01(\tR\acommentB\x0f\n" +
+	"\r_recipient_id2\xf5\x02\n" +
 	"\x0eBalanceService\x12E\n" +
 	"\n" +
 	"GetBalance\x12\x1a.balance.v1.BalanceRequest\x1a\x1b.balance.v1.BalanceResponse\x12B\n" +
 	"\aDeposit\x12\x1a.balance.v1.DepositRequest\x1a\x1b.balance.v1.BalanceResponse\x12D\n" +
 	"\bWithdraw\x12\x1b.balance.v1.WithdrawRequest\x1a\x1b.balance.v1.BalanceResponse\x12E\n" +
-	"\bTransfer\x12\x1b.balance.v1.TransferRequest\x1a\x1c.balance.v1.TransferResponseB8Z6github.com/irishout/balance-user-api/gen/go/balance/v1b\x06proto3"
+	"\bTransfer\x12\x1b.balance.v1.TransferRequest\x1a\x1c.balance.v1.TransferResponse\x12K\n" +
+	"\n" +
+	"Operations\x12\x1d.balance.v1.OperationsRequest\x1a\x1e.balance.v1.OperationsResponseB8Z6github.com/irishout/balance-user-api/gen/go/balance/v1b\x06proto3"
 
 var (
 	file_api_balance_v1_balance_proto_rawDescOnce sync.Once
@@ -369,29 +596,35 @@ func file_api_balance_v1_balance_proto_rawDescGZIP() []byte {
 	return file_api_balance_v1_balance_proto_rawDescData
 }
 
-var file_api_balance_v1_balance_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_api_balance_v1_balance_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_api_balance_v1_balance_proto_goTypes = []any{
-	(*BalanceRequest)(nil),   // 0: balance.v1.BalanceRequest
-	(*BalanceResponse)(nil),  // 1: balance.v1.BalanceResponse
-	(*DepositRequest)(nil),   // 2: balance.v1.DepositRequest
-	(*WithdrawRequest)(nil),  // 3: balance.v1.WithdrawRequest
-	(*TransferResponse)(nil), // 4: balance.v1.TransferResponse
-	(*TransferRequest)(nil),  // 5: balance.v1.TransferRequest
+	(*BalanceRequest)(nil),               // 0: balance.v1.BalanceRequest
+	(*BalanceResponse)(nil),              // 1: balance.v1.BalanceResponse
+	(*DepositRequest)(nil),               // 2: balance.v1.DepositRequest
+	(*WithdrawRequest)(nil),              // 3: balance.v1.WithdrawRequest
+	(*TransferResponse)(nil),             // 4: balance.v1.TransferResponse
+	(*TransferRequest)(nil),              // 5: balance.v1.TransferRequest
+	(*OperationsRequest)(nil),            // 6: balance.v1.OperationsRequest
+	(*OperationsResponse)(nil),           // 7: balance.v1.OperationsResponse
+	(*OperationsResponse_Operation)(nil), // 8: balance.v1.OperationsResponse.Operation
 }
 var file_api_balance_v1_balance_proto_depIdxs = []int32{
-	0, // 0: balance.v1.BalanceService.GetBalance:input_type -> balance.v1.BalanceRequest
-	2, // 1: balance.v1.BalanceService.Deposit:input_type -> balance.v1.DepositRequest
-	3, // 2: balance.v1.BalanceService.Withdraw:input_type -> balance.v1.WithdrawRequest
-	5, // 3: balance.v1.BalanceService.Transfer:input_type -> balance.v1.TransferRequest
-	1, // 4: balance.v1.BalanceService.GetBalance:output_type -> balance.v1.BalanceResponse
-	1, // 5: balance.v1.BalanceService.Deposit:output_type -> balance.v1.BalanceResponse
-	1, // 6: balance.v1.BalanceService.Withdraw:output_type -> balance.v1.BalanceResponse
-	4, // 7: balance.v1.BalanceService.Transfer:output_type -> balance.v1.TransferResponse
-	4, // [4:8] is the sub-list for method output_type
-	0, // [0:4] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	8, // 0: balance.v1.OperationsResponse.operations:type_name -> balance.v1.OperationsResponse.Operation
+	0, // 1: balance.v1.BalanceService.GetBalance:input_type -> balance.v1.BalanceRequest
+	2, // 2: balance.v1.BalanceService.Deposit:input_type -> balance.v1.DepositRequest
+	3, // 3: balance.v1.BalanceService.Withdraw:input_type -> balance.v1.WithdrawRequest
+	5, // 4: balance.v1.BalanceService.Transfer:input_type -> balance.v1.TransferRequest
+	6, // 5: balance.v1.BalanceService.Operations:input_type -> balance.v1.OperationsRequest
+	1, // 6: balance.v1.BalanceService.GetBalance:output_type -> balance.v1.BalanceResponse
+	1, // 7: balance.v1.BalanceService.Deposit:output_type -> balance.v1.BalanceResponse
+	1, // 8: balance.v1.BalanceService.Withdraw:output_type -> balance.v1.BalanceResponse
+	4, // 9: balance.v1.BalanceService.Transfer:output_type -> balance.v1.TransferResponse
+	7, // 10: balance.v1.BalanceService.Operations:output_type -> balance.v1.OperationsResponse
+	6, // [6:11] is the sub-list for method output_type
+	1, // [1:6] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_api_balance_v1_balance_proto_init() }
@@ -399,13 +632,15 @@ func file_api_balance_v1_balance_proto_init() {
 	if File_api_balance_v1_balance_proto != nil {
 		return
 	}
+	file_api_balance_v1_balance_proto_msgTypes[6].OneofWrappers = []any{}
+	file_api_balance_v1_balance_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_balance_v1_balance_proto_rawDesc), len(file_api_balance_v1_balance_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

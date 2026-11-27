@@ -3,6 +3,7 @@ package grpcapi
 import (
 	"context"
 	"errors"
+	"time"
 
 	balancev1 "github.com/irishout/balance-user-api/gen/go/balance/v1"
 	"github.com/irishout/balance-user-api/internal/domain"
@@ -48,6 +49,12 @@ func toGRPCError(err error) error {
 		return status.Error(codes.NotFound, "user_to_id not found")
 	case errors.Is(err, domain.ErrInsufficientFunds):
 		return status.Error(codes.FailedPrecondition, "insufficient funds")
+	case errors.Is(err, domain.ErrInvalidPagination):
+		return status.Error(codes.InvalidArgument, "invalid pagination")
+	case errors.Is(err, domain.ErrInvalidOperationSort):
+		return status.Error(codes.InvalidArgument, "sort must be date or amount")
+	case errors.Is(err, errors.ErrUnsupported):
+		return status.Error(codes.Unimplemented, "operation history requires PostgreSQL")
 	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, "request canceled")
 	case errors.Is(err, context.DeadlineExceeded):
@@ -105,4 +112,47 @@ func (h *Handler) Transfer(ctx context.Context, req *balancev1.TransferRequest) 
 		BalanceUserTo:   balanceTo,
 	}, nil
 
+}
+
+func (h *Handler) Operations(ctx context.Context, req *balancev1.OperationsRequest) (*balancev1.OperationsResponse, error) {
+	if req == nil {
+		return nil, toGRPCError(domain.ErrInvalidUserID)
+	}
+
+	page, pageSize := 1, 20
+	if req.Page != nil {
+		page = int(req.GetPage())
+	}
+	if req.PageSize != nil {
+		pageSize = int(req.GetPageSize())
+	}
+	if page < 1 {
+		return nil, status.Error(codes.InvalidArgument, "page must be positive")
+	}
+	if pageSize < 1 {
+		return nil, status.Error(codes.InvalidArgument, "page_size must be positive")
+	}
+	offset := (page - 1) * pageSize
+
+	history, err := h.svc.ListOperations(ctx, req.GetUserId(), pageSize, offset, req.GetSort())
+	if err != nil {
+		return nil, toGRPCError(err)
+	}
+
+	operations := make([]*balancev1.OperationsResponse_Operation, 0, len(history))
+	for _, op := range history {
+		operations = append(operations, &balancev1.OperationsResponse_Operation{
+			Id:            op.ID,
+			OperationType: op.Type,
+			OperationDate: op.Date.UTC().Format(time.RFC3339Nano),
+			UserId:        op.UserID,
+			RecipientId:   op.RecipientID,
+			Amount:        op.Amount,
+			Comment:       op.Comment,
+		})
+	}
+
+	return &balancev1.OperationsResponse{
+		Operations: operations,
+	}, nil
 }

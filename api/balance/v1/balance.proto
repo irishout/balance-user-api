@@ -28,9 +28,31 @@ message TransferRequest {
   int64 amount = 3;
 }
 
+message OperationsRequest {
+  int64 user_id = 1;
+  optional int32 page = 2;
+  optional int32 page_size = 3;
+  string sort = 4;
+}
+
+message OperationsResponse {
+  message Operation {
+    int64 id = 1;
+    string operation_type = 2;
+    string operation_date = 3;
+    int64 user_id = 4;
+    optional int64 recipient_id = 5;
+    int64 amount = 6;
+    string comment = 7;
+  }
+
+  repeated Operation operations = 1;
+}
+
 service BalanceService {
   rpc GetBalance(BalanceRequest) returns (BalanceResponse);
   rpc Deposit(DepositRequest) returns (BalanceResponse);
   rpc Withdraw(WithdrawRequest) returns (BalanceResponse);
   rpc Transfer(TransferRequest) returns (TransferResponse);
+  rpc Operations(OperationsRequest) returns (OperationsResponse);
 }
